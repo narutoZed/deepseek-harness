@@ -1121,6 +1121,36 @@ describe('HarnessSdkJsonRpcServer', () => {
     await expect(server.getOrCreateSession('after-shutdown')).rejects.toThrow('SDK server is shutting down')
   })
 
+  it('resumes a persisted session when a fresh SDK server sees the same id', async () => {
+    const resumedHandle = { agent: {} as Agent, dispose: vi.fn(() => Promise.resolve()) }
+    const create = vi.fn<(options: unknown) => Promise<AgentHandle>>()
+      .mockRejectedValue(new Error('session "persisted" already exists'))
+    const resume = vi.fn<(options: unknown) => Promise<AgentHandle>>()
+      .mockResolvedValue(resumedHandle)
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      agents: { create, resume, get: () => undefined },
+      get: () => undefined,
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport()) as unknown as {
+      getOrCreateSession(sessionId: string): Promise<{ handle: AgentHandle }>
+      shutdown(): Promise<Record<string, never>>
+    }
+
+    await expect(server.getOrCreateSession('persisted'))
+      .resolves.toMatchObject({ handle: resumedHandle })
+    expect(resume).toHaveBeenCalledWith({
+      resumeSessionId: SessionId('persisted'),
+      agentOptions: {
+        provider: 'deepseek-official',
+        model: 'deepseek-official',
+      },
+    })
+
+    await server.shutdown()
+    expect(resumedHandle.dispose).toHaveBeenCalledOnce()
+  })
+
   it('resolves a relative cwd before creating the session', async () => {
     const create = vi.fn<(options: unknown) => Promise<AgentHandle>>()
       .mockResolvedValue({ agent: {} as Agent, dispose: () => Promise.resolve() })
