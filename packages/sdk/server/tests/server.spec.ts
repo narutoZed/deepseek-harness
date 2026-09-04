@@ -14,6 +14,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import UserQuestions from '@deepseek-ai/dsh-user-questions'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import SubagentRuntime, { type SubagentResult, type SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
@@ -68,6 +69,7 @@ async function makeHarness(storageDir: string) {
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(UserQuestions)
   await ctx.plugin(JsonlSessionPersistence, { root: storageDir })
   await new Promise(resolve => setTimeout(resolve, 50))
   return ctx
@@ -177,6 +179,44 @@ describe('HarnessSdkJsonRpcServer', () => {
       expect(llmServer.requests).toHaveLength(3)
 
       await server.handleRequest('shutdown', undefined)
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it('round-trips a user question through an SDK interaction notification', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-question-'))
+    const ctx = await makeHarness(storageDir)
+    try {
+      const transport = new FakeTransport()
+      const server = new HarnessSdkJsonRpcServer(ctx, transport)
+      const handle = await ctx.agents.create({
+        sessionId: SessionId('question-session'),
+        meta: { cwd: storageDir },
+        agentOptions: { provider: 'deepseek-official', model: 'test-model' },
+      })
+      const answer = ctx.userQuestions.ask({
+        agent: handle.agent,
+        questions: [{ id: 'task', question: 'What should I do?' }],
+      })
+      await vi.waitFor(() => {
+        expect(transport.notifications.some(item => item.method === 'interaction.request')).toBe(true)
+      })
+      const notification = transport.notifications.find(item => item.method === 'interaction.request')
+      const interactionId = notification?.params?.interactionId
+      expect(interactionId).toBeTypeOf('string')
+
+      await expect(server.handleRequest('interaction/respond', {
+        interactionId,
+        answers: [{ id: 'task', selected: [], custom: 'Build the feature' }],
+      })).resolves.toEqual({ accepted: true })
+      await expect(answer).resolves.toEqual({
+        answers: [{ id: 'task', selected: [], custom: 'Build the feature' }],
+      })
+
+      await handle.dispose()
+      await server.shutdown()
     } finally {
       await ctx.fiber.dispose()
       await rm(storageDir, { recursive: true, force: true })
@@ -1222,6 +1262,6 @@ describe('HarnessSdkJsonRpcServer', () => {
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
 
     await expect(server.shutdown()).rejects.toBe(listenerFailure)
-    expect(on).toHaveBeenCalledTimes(4)
+    expect(on).toHaveBeenCalledTimes(5)
   })
 })

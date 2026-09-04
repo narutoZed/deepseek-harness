@@ -15,6 +15,9 @@ export type {
   HarnessSdkRequestMap,
   InitializeParams,
   InitializeResult,
+  InteractionRequestNotification,
+  InteractionRespondParams,
+  InteractionRespondResult,
   SdkEncodedImageBlock,
   SdkPromptContentBlock,
   SdkRunStatus,
@@ -24,4 +27,5 @@ export type {
   SessionPromptResult,
   SubagentFinishedNotification,
   SubagentStartedNotification,
+  SdkUserQuestion,
 } from './types.ts'

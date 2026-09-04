@@ -188,6 +188,18 @@ class HarnessClient:
         )
         return response.messageId
 
+    def respond_interaction(
+        self,
+        interaction_id: str,
+        answers: list[JsonObject],
+    ) -> bool:
+        response = self.request(
+            "interaction/respond",
+            {"interactionId": interaction_id, "answers": answers},
+            response_model=_InteractionRespondResponse,
+        )
+        return response.accepted
+
     def request(
         self,
         method: str,
@@ -579,6 +591,10 @@ class NotificationSubscription:
 
 class _SessionPromptResponse(BaseModel):
     messageId: str
+
+
+class _InteractionRespondResponse(BaseModel):
+    accepted: bool
 
 
 class _ShutdownResponse(BaseModel):
