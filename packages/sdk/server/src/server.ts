@@ -6,6 +6,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
@@ -15,10 +16,17 @@ import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
+import type {
+  AskUserQuestionAnswer,
+  AskUserQuestionRequest,
+} from '@deepseek-ai/dsh-user-questions'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import type {
   InitializeParams,
   InitializeResult,
+  InteractionRequestNotification,
+  InteractionRespondParams,
+  InteractionRespondResult,
   JsonRpcTransportPeer,
   SessionEventNotification,
   SessionPromptParams,
@@ -30,6 +38,14 @@ import type {
 
 interface SessionRecord {
   handle: AgentHandle
+}
+
+interface PendingInteraction {
+  sessionId: string
+  request: AskUserQuestionRequest
+  resolve: (answer: AskUserQuestionAnswer) => void
+  reject: (error: Error) => void
+  removeAbortListener: () => void
 }
 
 function encodedImage(block: SessionPromptParams['contentBlocks'][number]): block is SdkEncodedImageBlock {
@@ -81,6 +97,7 @@ export class HarnessSdkJsonRpcServer {
   private llmFiber: { dispose(): Promise<void> } | undefined
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly sessionCreations = new Map<string, Promise<SessionRecord>>()
+  private readonly pendingInteractions = new Map<string, PendingInteraction>()
   private readonly disposers: (() => void)[] = []
   private shutdownTask: Promise<Record<string, never>> | undefined
   private shuttingDown = false
@@ -124,6 +141,32 @@ export class HarnessSdkJsonRpcServer {
         ...(info.lastAssistantMessage === undefined ? {} : { lastAssistantMessage: info.lastAssistantMessage }),
       }
       transport.notify('subagent.finished', payload)
+    }))
+    this.disposers.push(ctx.on('user-questions/request', (request, next) => {
+      const agent = request.agent
+      if (agent === undefined) return next()
+      const interactionId = randomUUID()
+      const sessionId = String(agent.session.id)
+      return new Promise<AskUserQuestionAnswer>((resolve, reject) => {
+        const onAbort = (): void => {
+          this.pendingInteractions.delete(interactionId)
+          reject(new Error('interaction was aborted'))
+        }
+        request.signal?.addEventListener('abort', onAbort, { once: true })
+        this.pendingInteractions.set(interactionId, {
+          sessionId,
+          request,
+          resolve,
+          reject,
+          removeAbortListener: () => request.signal?.removeEventListener('abort', onAbort),
+        })
+        const payload: InteractionRequestNotification = {
+          sessionId,
+          interactionId,
+          questions: request.questions.map(question => ({ ...question })),
+        }
+        transport.notify('interaction.request', payload)
+      })
     }))
   }
 
@@ -216,6 +259,11 @@ export class HarnessSdkJsonRpcServer {
     const records = [...this.sessions.values()]
     this.sessions.clear()
     const failures: unknown[] = []
+    for (const pending of this.pendingInteractions.values()) {
+      pending.removeAbortListener()
+      pending.reject(new Error('SDK server is shutting down'))
+    }
+    this.pendingInteractions.clear()
     while (this.disposers.length > 0) {
       try {
         this.disposers.pop()?.()
@@ -249,11 +297,27 @@ export class HarnessSdkJsonRpcServer {
         return this.initialize(params as unknown as InitializeParams)
       case 'session/prompt':
         return this.prompt(params as unknown as SessionPromptParams)
+      case 'interaction/respond':
+        return this.respondInteraction(params as unknown as InteractionRespondParams)
       case 'shutdown':
         return this.shutdown()
       default:
         throw new Error(`unknown DeepSeek Harness SDK runtime method: ${method}`)
     }
+  }
+
+  private respondInteraction(params: InteractionRespondParams): InteractionRespondResult {
+    const pending = this.pendingInteractions.get(params.interactionId)
+    if (pending === undefined) throw new Error('interaction is not pending')
+    const expected = new Set(pending.request.questions.map(question => question.id))
+    if (params.answers.length !== expected.size
+      || params.answers.some(answer => !expected.delete(answer.id))) {
+      throw new Error('interaction response must answer every question exactly once')
+    }
+    this.pendingInteractions.delete(params.interactionId)
+    pending.removeAbortListener()
+    pending.resolve({ answers: params.answers })
+    return { accepted: true }
   }
 
   private async getOrCreateSession(sessionId: string): Promise<SessionRecord> {
