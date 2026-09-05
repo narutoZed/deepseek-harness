@@ -8,6 +8,7 @@
  * @module @deepseek-ai/dsh-sdk-protocol/types
  */
 
+import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SubagentStopReason } from '@deepseek-ai/dsh-subagent'
@@ -85,6 +86,14 @@ export interface SessionStatusNotification {
   status: 'idle' | 'running'
 }
 
+/** `session.assistant_stream` payload: one live assistant stream frame for a session. */
+export interface SessionAssistantStreamNotification {
+  /** Session whose live assistant attempt emitted the frame. */
+  sessionId: string
+  /** Process-local assistant stream frame emitted before durable settlement. */
+  frame: AssistantStreamFrame
+}
+
 /** `subagent.started` payload: an in-runtime child session was created. */
 export interface SubagentStartedNotification {
   /** The delegating session. */
@@ -143,6 +152,7 @@ export interface InteractionRespondResult {
 export interface HarnessSdkNotificationMap {
   'session.event': SessionEventNotification
   'session.status': SessionStatusNotification
+  'session.assistant_stream': SessionAssistantStreamNotification
   'subagent.started': SubagentStartedNotification
   'subagent.finished': SubagentFinishedNotification
   'interaction.request': InteractionRequestNotification

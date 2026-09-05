@@ -1,4 +1,4 @@
-import { createUserMessage, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, LlmAdapter, LlmAttemptId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { type Agent, type AgentHandle } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { type Agent, type AgentHandle, type AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 
@@ -487,6 +487,36 @@ describe('HarnessSdkJsonRpcServer', () => {
         { method: 'session.status', params: { sessionId: 'message-outcome', status: 'running' } },
         { method: 'session.status', params: { sessionId: 'message-outcome', status: 'idle' } },
       ])
+    await server.shutdown()
+    await ctx.fiber.dispose()
+  })
+
+  it('forwards live assistant stream frames before the durable session event settles', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    const transport = new FakeTransport()
+    const server = new HarnessSdkJsonRpcServer(ctx, transport)
+    const session = ctx.sessions.create(SessionId('stream-session'))
+    const agent = ({
+      id: SessionId('stream-session'),
+      session,
+    } satisfies Pick<Agent, 'id' | 'session'>) as Agent
+    const frame: AssistantStreamFrame = {
+      type: 'chunk',
+      attemptId: LlmAttemptId('attempt-1'),
+      revision: 1,
+      index: 0,
+      time: 42,
+      chunk: { type: 'text-delta', index: 0, text: 'hel' },
+    }
+
+    ctx.emit('agent/assistant-stream', { agent, frame })
+
+    expect(transport.notifications).toContainEqual({
+      method: 'session.assistant_stream',
+      params: { sessionId: 'stream-session', frame },
+    })
     await server.shutdown()
     await ctx.fiber.dispose()
   })
@@ -1337,6 +1367,6 @@ describe('HarnessSdkJsonRpcServer', () => {
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
 
     await expect(server.shutdown()).rejects.toBe(listenerFailure)
-    expect(on).toHaveBeenCalledTimes(5)
+    expect(on).toHaveBeenCalledTimes(6)
   })
 })

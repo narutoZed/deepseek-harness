@@ -28,6 +28,7 @@ import type {
   InteractionRespondParams,
   InteractionRespondResult,
   JsonRpcTransportPeer,
+  SessionAssistantStreamNotification,
   SessionEventNotification,
   SessionPromptParams,
   SessionSteerParams,
@@ -118,6 +119,10 @@ export class HarnessSdkJsonRpcServer {
     this.disposers.push(ctx.on('agent/status', ({ agent, status }) => {
       this.transport.notify('session.status', { sessionId: String(agent.session.id), status })
     }))
+    this.disposers.push(ctx.on('agent/assistant-stream', ({ agent, frame }) => {
+      const payload: SessionAssistantStreamNotification = { sessionId: String(agent.session.id), frame }
+      this.transport.notify('session.assistant_stream', payload)
+    }, { global: true }))
     this.disposers.push(ctx.on('session/created', (session) => {
       const parentSession = session.header.parentSession
       if (parentSession === undefined) return
