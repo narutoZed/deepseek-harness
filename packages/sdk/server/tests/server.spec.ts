@@ -518,6 +518,9 @@ describe('HarnessSdkJsonRpcServer', () => {
       params: { sessionId: 'stream-session', frame },
     })
     await server.shutdown()
+    const count = transport.notifications.length
+    ctx.emit('agent/assistant-stream', { agent, frame })
+    expect(transport.notifications).toHaveLength(count)
     await ctx.fiber.dispose()
   })
 
