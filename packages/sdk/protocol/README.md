@@ -29,6 +29,13 @@ English | [中文](README.zh.md)
 
 Use this package when you build or debug an SDK wire end — the serving plugin, a client library, or custom tooling that speaks the SDK protocol. It gives you one transport for JSON-RPC 2.0 over caller-owned byte streams and the typed shapes for every SDK method and notification.
 
+<a id="running-session-steering"></a>
+### Running-session steering
+
+`session/steer` accepts `{ sessionId, requestId, contentBlocks }` for an existing running session and returns its durable inbox `messageId` without waiting for completion. Identical successful or in-flight retries reuse that receipt within the process; reusing an id with different content is rejected. Failed admissions are retryable. Missing or idle sessions reject rather than starting a turn.
+
+`session/prompt` accepts optional `requestId` for correlation. Both operations retain it as `source.rpcId`. These identities do not provide cross-process retry recovery.
+
 ### Framing and transport
 
 Wire one JSON-RPC 2.0 message per `\n`-terminated line over byte streams you own. A frame with both `id` and `method` is a request, `id` alone is a response, and `method` alone is a notification; malformed lines are ignored. Requests with no registered handler answer `-32601`, handler failures answer `-32603`, and error responses reject the pending request with `JsonRpcResponseError`, which preserves the wire `code` and optional `data`. `start()` attaches stream listeners and `close()` detaches them and rejects pending requests without destroying the streams.

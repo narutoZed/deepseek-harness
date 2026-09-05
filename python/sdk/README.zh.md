@@ -34,6 +34,11 @@ print(result.final_response)
 
 `DeepSeekHarness` 延迟启动运行时，并在调用 `close()` 或退出上下文管理器前复用该进程。首次 profile 握手通过 `initialize_timeout_seconds` 使用独立的 30 秒默认上限；普通轮次在未设置 `request_timeout_seconds` 时仍不设上限。超时诊断会指明所选 profile，并包含保留的运行时诊断。`cwd` 是 agent workspace；`runtime_cwd` 独立选择子进程工作目录。两者都会在启动前转成绝对路径。`provider`、`model`、可选的 `reasoning_effort` 和可选的正整数 `max_tokens` 通过 JSON-RPC 初始化发送。`base_url` 与 `api_key` 会显式覆盖子进程环境中的 `DEEPSEEK_BASE_URL` 与 `DEEPSEEK_API_KEY`。
 
+<a id="running-session-steering"></a>
+## 运行中会话的引导
+
+`client.session_steer(session_id, blocks, request_id=...)` 返回运行会话中已准入消息的收件箱 id。`session_prompt` 和高层 `run` 接受可选 `request_id`，用于关联排队输入。中途引导需要匹配的运行时版本。
+
 ## 自定义插件
 
 持久自定义属于 `dsh` profile。使用运行时 wheel 提供的 `dsh` 命令初始化随附的 SDK profile，并安装外部 bundle：

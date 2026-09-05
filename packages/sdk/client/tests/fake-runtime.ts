@@ -227,6 +227,10 @@ reader.on('line', (line) => {
   if (frame.method === undefined || frame.id === undefined) return
   const respond = (result: object): void => { write({ jsonrpc: '2.0', id: frame.id, result }) }
   switch (frame.method) {
+    case 'session/steer':
+      if (env.FAKE_RECORD_STEER !== undefined) writeFileSync(env.FAKE_RECORD_STEER, JSON.stringify(frame.params))
+      respond(env.FAKE_MALFORMED_STEER === undefined ? { messageId: 'steer-message' } : {})
+      return
     case 'interaction/respond':
       respond(env.FAKE_MALFORMED_INTERACTION === undefined
         ? { accepted: frame.params?.interactionId === 'question-1' && Array.isArray(frame.params.answers) }
@@ -275,7 +279,7 @@ reader.on('line', (line) => {
           id: messageId,
           role: 'user',
           content: [],
-          source: { kind: 'user' },
+          source: { kind: 'user', ...frame.params?.requestId === undefined ? {} : { rpcId: frame.params.requestId } },
         }],
       })
       notify('session.status', { sessionId, status: 'running' })

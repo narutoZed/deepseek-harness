@@ -30,6 +30,7 @@ import type {
   JsonRpcTransportPeer,
   SessionEventNotification,
   SessionPromptParams,
+  SessionSteerParams,
   SessionPromptResult,
   SdkEncodedImageBlock,
   SubagentFinishedNotification,
@@ -95,6 +96,7 @@ export class HarnessSdkJsonRpcServer {
   private reasoningEffort: ReturnType<typeof ReasoningEffortId> | undefined
   private maxTokens: number | undefined
   private llmFiber: { dispose(): Promise<void> } | undefined
+  private readonly steers = new Map<string, { content: string; result: Promise<SessionPromptResult> }>()
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly sessionCreations = new Map<string, Promise<SessionRecord>>()
   private readonly pendingInteractions = new Map<string, PendingInteraction>()
@@ -219,6 +221,7 @@ export class HarnessSdkJsonRpcServer {
    */
   async prompt(params: SessionPromptParams): Promise<SessionPromptResult> {
     if (!this.initialized) throw new Error('SDK server is not initialized')
+    if (params.requestId !== undefined && (typeof params.requestId !== 'string' || params.requestId.length === 0)) throw new TypeError('requestId must be a non-empty string')
     const rec = await this.getOrCreateSession(params.sessionId)
     // An agent-loop-only reload disposes the loop's agents while this record
     // survives; a retained agent accepts followup() silently, so validate the
@@ -230,10 +233,54 @@ export class HarnessSdkJsonRpcServer {
     this.assertLiveAgent(rec, params.sessionId)
     const message = createUserMessage({
       content,
-      source: { kind: 'user' },
+      source: { kind: 'user', ...(params.requestId === undefined ? {} : { rpcId: params.requestId }) },
     })
     rec.handle.agent.followup(message)
     return { messageId: message.id }
+  }
+
+  /**
+   * Inject identified user input into a running session at its next step boundary.
+   * @param params - Existing session, content and retry identity.
+   * @returns The persisted inbox message identity, reused for identical retries.
+   */
+  steer(params: SessionSteerParams | undefined): Promise<SessionPromptResult> {
+    if (!this.initialized || this.shuttingDown) throw new Error('SDK server is not active')
+    if (typeof params?.sessionId !== 'string' || typeof params.requestId !== 'string' || params.requestId.length === 0
+      || !Array.isArray(params.contentBlocks) || params.contentBlocks.length === 0) {
+      throw new TypeError('session/steer requires sessionId, requestId and non-empty contentBlocks')
+    }
+    const key = JSON.stringify([params.sessionId, params.requestId])
+    const content = JSON.stringify(params.contentBlocks)
+    const previous = this.steers.get(key)
+    if (previous !== undefined) {
+      if (previous.content !== content) throw new Error('session/steer requestId was reused with different content')
+      return previous.result
+    }
+    const result = this.deliverSteer(params).catch((error: unknown) => {
+      this.steers.delete(key)
+      throw error
+    })
+    this.steers.set(key, { content, result })
+    return result
+  }
+
+  private async deliverSteer(params: SessionSteerParams): Promise<SessionPromptResult> {
+    const rec = this.sessions.get(params.sessionId)
+    if (rec === undefined) throw new Error('session/steer requires an existing session')
+    this.assertRunningAgent(rec, params.sessionId)
+    const content = await durablePromptContent(this.ctx, params.contentBlocks)
+    this.assertRunningAgent(rec, params.sessionId)
+    const message = createUserMessage({ content, source: { kind: 'user', rpcId: params.requestId } })
+    rec.handle.agent.steer(message)
+    return { messageId: message.id }
+  }
+
+  private assertRunningAgent(rec: SessionRecord, sessionId: string): void {
+    this.assertLiveAgent(rec, sessionId)
+    if (this.shuttingDown || rec.handle.agent.status !== 'running') {
+      throw new Error('session/steer requires a running session')
+    }
   }
 
   private assertLiveAgent(rec: SessionRecord, sessionId: string): void {
@@ -259,6 +306,7 @@ export class HarnessSdkJsonRpcServer {
     this.sessionCreations.clear()
     const records = [...this.sessions.values()]
     this.sessions.clear()
+    this.steers.clear()
     const failures: unknown[] = []
     for (const pending of this.pendingInteractions.values()) {
       pending.removeAbortListener()
@@ -298,6 +346,8 @@ export class HarnessSdkJsonRpcServer {
         return this.initialize(params as unknown as InitializeParams)
       case 'session/prompt':
         return this.prompt(params as unknown as SessionPromptParams)
+      case 'session/steer':
+        return this.steer(params as unknown as SessionSteerParams)
       case 'interaction/respond':
         return this.respondInteraction(params as unknown as InteractionRespondParams)
       case 'shutdown':

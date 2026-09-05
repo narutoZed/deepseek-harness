@@ -127,8 +127,9 @@ class DeepSeekHarness:
         *,
         session_id: str | None = None,
         on_notification: Callable[[Notification], None] | None = None,
+        request_id: str | None = None,
     ) -> RunResult:
-        return self.start_session(session_id).run(input, on_notification=on_notification)
+        return self.start_session(session_id).run(input, on_notification=on_notification, request_id=request_id)
 
 
 class Session:
@@ -141,6 +142,7 @@ class Session:
         input: str | list[JsonObject],
         *,
         on_notification: Callable[[Notification], None] | None = None,
+        request_id: str | None = None,
     ) -> RunResult:
         content_blocks = normalize_input(input)
         notifications: list[Notification] = []
@@ -163,6 +165,7 @@ class Session:
                 self.id,
                 content_blocks,
                 notification_subscription=subscription,
+                **({"request_id": request_id} if request_id is not None else {}),
             )
 
             received = False

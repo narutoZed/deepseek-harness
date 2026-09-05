@@ -29,6 +29,11 @@ kind: "package-library"
 
 当 TypeScript 代码需要从另一进程驱动完整 Harness 运行时、且你能显式指名运行时可执行文件时，使用本客户端。常用路径极简：用启动规格构造 `DeepSeekHarness`，运行提示词，然后关闭它，使子进程总能被回收。
 
+<a id="running-session-steering"></a>
+### 运行中会话的引导
+
+`client.steer(sessionId, blocks, requestId)` 返回运行会话中已准入消息的收件箱 id。`client.prompt(sessionId, blocks, requestId?)` 和带 `requestId` 的高层 `run` 保留排队输入的身份。运行时负责下一步调度和进程内重试回执。
+
 ### 用 DeepSeekHarness 运行 agent 轮次
 
 ```ts

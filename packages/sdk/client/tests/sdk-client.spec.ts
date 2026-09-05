@@ -63,6 +63,29 @@ async function tempDir(prefix: string): Promise<string> {
 }
 
 describe('DeepSeekHarness', () => {
+  it('retains an identified prompt in its durable user source', async () => {
+    const harness = harnessWith()
+    const result = await harness.run('work', { sessionId: 'main', requestId: 'request-1' })
+    expect(result.events.find(event => event.type === 'agent/inbox/spliced')).toMatchObject({
+      data: { inserted: [{ source: { kind: 'user', rpcId: 'request-1' } }] },
+    })
+  })
+
+  it('steers with the exact session and retry identity and returns the inbox receipt', async () => {
+    const dir = await tempDir('sdk-steer-')
+    const record = join(dir, 'request.json')
+    const harness = harnessWith({ FAKE_RECORD_STEER: record })
+    await expect(harness.client.steer('main', [{ type: 'text', text: 'next step' }], 'input-1'))
+      .resolves.toBe('steer-message')
+    expect(JSON.parse(await readFile(record, 'utf8'))).toEqual({
+      sessionId: 'main', contentBlocks: [{ type: 'text', text: 'next step' }], requestId: 'input-1',
+    })
+  })
+
+  it('rejects steering replies without a durable message id', async () => {
+    const harness = harnessWith({ FAKE_MALFORMED_STEER: '1' })
+    await expect(harness.client.steer('main', [], 'input-1')).rejects.toThrow(SdkProtocolError)
+  })
   it('answers SDK interactions through the typed client method', async () => {
     const harness = harnessWith()
     await expect(harness.client.respondInteraction('question-1', [

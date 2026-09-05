@@ -29,6 +29,11 @@ The SDK host receives `interaction.request` when a root agent asks the user a qu
 
 Mount this plugin when a runtime must serve SDK clients: add it to a `cordis.yml` that composes the agent service, boot the runtime, and clients connect over stdio. The common path is explicit — the plugin needs the `agents` service; every other capability comes from the surrounding tree.
 
+<a id="running-session-steering"></a>
+### Running-session steering
+
+The server admits next-step input through `session/steer` and preserves caller identity on queued prompts. See the [protocol description](../protocol/README.md#running-session-steering) for retry and inactive-session behavior.
+
 ### Wiring
 
 The plugin creates one agent per `sessionId` on first use. A registered model adapter wins the route; an unowned `deepseek-official` route mounts the DeepSeek adapter, and any other unowned provider fails initialization. The selected adapter resolves the exact model and optional reasoning effort before initialization succeeds.

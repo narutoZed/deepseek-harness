@@ -287,13 +287,29 @@ export class HarnessClient {
    * Queue one prompt and return its durable inbox identity.
    * @param sessionId - target session; an unknown id creates it.
    * @param contentBlocks - the user message, sent verbatim.
+   * @param requestId - optional caller identity retained in the durable user source.
    * @returns the queued message id.
    */
-  async prompt(sessionId: string, contentBlocks: SdkPromptContentBlock[]): Promise<string> {
-    const params: SessionPromptParams = { sessionId, contentBlocks }
+  async prompt(sessionId: string, contentBlocks: SdkPromptContentBlock[], requestId?: string): Promise<string> {
+    const params: SessionPromptParams = { sessionId, contentBlocks, ...requestId === undefined ? {} : { requestId } }
     const result = await this.request('session/prompt', { ...params })
     if (!isRecord(result) || typeof result.messageId !== 'string') {
       throw new SdkProtocolError(`session/prompt returned no message id: ${JSON.stringify(result)}`)
+    }
+    return result.messageId
+  }
+
+  /**
+   * Steer the next step of an already-running SDK session.
+   * @param sessionId - existing session whose agent is running.
+   * @param contentBlocks - input admitted to the nearest step.
+   * @param requestId - process-local retry identity; reuse requires identical content.
+   * @returns the durable inbox message id, without waiting for the agent to finish.
+   */
+  async steer(sessionId: string, contentBlocks: SdkPromptContentBlock[], requestId: string): Promise<string> {
+    const result = await this.request('session/steer', { sessionId, contentBlocks, requestId })
+    if (!isRecord(result) || typeof result.messageId !== 'string') {
+      throw new SdkProtocolError('session/steer returned no message id')
     }
     return result.messageId
   }

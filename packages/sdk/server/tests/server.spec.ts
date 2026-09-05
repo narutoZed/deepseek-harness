@@ -11,7 +11,7 @@ import AgentRegistry, { type Agent, type AgentHandle } from '@deepseek-ai/dsh-ag
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
@@ -39,7 +39,7 @@ afterEach(async () => {
   vi.unstubAllEnvs()
 })
 
-async function mockCompletionServer(): Promise<{ url: string; requests: unknown[]; headers: IncomingMessage['headers'][] }> {
+async function mockCompletionServer(beforeReply?: () => Promise<void>): Promise<{ url: string; requests: unknown[]; headers: IncomingMessage['headers'][] }> {
   const requests: unknown[] = []
   const headers: IncomingMessage['headers'][] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
@@ -48,12 +48,18 @@ async function mockCompletionServer(): Promise<{ url: string; requests: unknown[
     request.on('end', () => {
       requests.push(JSON.parse(body))
       headers.push(request.headers)
-      response.writeHead(200, { 'content-type': 'text/event-stream' })
-      response.write('data: {"choices":[{"delta":{"role":"assistant","content":null,"reasoning_content":""}}]}\n\n')
-      response.write('data: {"choices":[{"delta":{"content":"done"}}]}\n\n')
-      response.write('data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}\n\n')
-      response.write('data: [DONE]\n\n')
-      response.end()
+      const send = (): void => {
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.write('data: {"choices":[{"delta":{"role":"assistant","content":null,"reasoning_content":""}}]}\n\n')
+        response.write('data: {"choices":[{"delta":{"content":"done"}}]}\n\n')
+        response.write('data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}\n\n')
+        response.write('data: [DONE]\n\n')
+        response.end()
+      }
+      if (beforeReply === undefined) send()
+      else void beforeReply().then(send, (error: unknown) => {
+        response.destroy(error instanceof Error ? error : new Error(String(error)))
+      })
     })
   })
   servers.push(server)
@@ -268,6 +274,68 @@ describe('HarnessSdkJsonRpcServer', () => {
     await server.shutdown()
     expect(mainHandle.dispose).toHaveBeenCalledOnce()
     expect(otherHandle.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('persists steering in next-step inbox and includes it in the next model request', { timeout: 15_000 }, async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-sdk-steer-'))
+    const gate = Promise.withResolvers<undefined>()
+    const llmServer = await mockCompletionServer(() => gate.promise)
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
+    vi.stubEnv('DEEPSEEK_BASE_URL', llmServer.url)
+    const ctx = await makeHarness(storageDir)
+    const transport = new FakeTransport()
+    const server = new HarnessSdkJsonRpcServer(ctx, transport)
+    try {
+      await server.initialize({ cwd: storageDir, provider: 'deepseek-official', model: 'dsagent-model' })
+      await server.prompt({ sessionId: 'main', requestId: 'queued-first', contentBlocks: [{ type: 'text', text: 'first' }] })
+      const inserted = (target: 'next-step' | 'next-turn', rpcId: string, messageId?: string): boolean =>
+        transport.notifications.some((notification) => {
+          const event = notification.params?.event as SessionEvent | undefined
+          return notification.method === 'session.event' && event?.type === 'agent/inbox/spliced'
+            && event.data.target === target && event.data.inserted.some(message =>
+            message.source.kind === 'user' && 'rpcId' in message.source && message.source.rpcId === rpcId
+              && (messageId === undefined || message.id === messageId))
+        })
+      expect(inserted('next-turn', 'queued-first')).toBe(true)
+      await vi.waitFor(() => { expect(llmServer.requests).toHaveLength(1) })
+      const receipt = await server.handleRequest('session/steer', {
+        sessionId: 'main', requestId: 'steer-real', contentBlocks: [{ type: 'text', text: 'steer-next-step' }],
+      }) as { messageId: string }
+      expect(inserted('next-step', 'steer-real', receipt.messageId)).toBe(true)
+      gate.resolve(undefined)
+      await vi.waitFor(() => { expect(llmServer.requests.length).toBeGreaterThan(1) })
+      expect(JSON.stringify(llmServer.requests[1])).toContain('steer-next-step')
+    } finally {
+      gate.resolve(undefined)
+      await server.shutdown()
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it('steers only an existing running agent and replays the same identified input once', async () => {
+    const steer = vi.fn<Agent['steer']>()
+    const agent = { id: SessionId('main'), status: 'running', followup: vi.fn(), steer } as unknown as Agent
+    const handle = { agent, dispose: vi.fn(async () => {}) }
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      agents: { create: vi.fn(async () => handle), get: () => agent },
+      get: () => undefined,
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    ;(server as unknown as { initialized: boolean }).initialized = true
+    const params = { sessionId: 'main', requestId: 'input-1', contentBlocks: [{ type: 'text' as const, text: 'change direction' }] }
+    await expect(server.steer(params)).rejects.toThrow('existing session')
+    await server.prompt({ sessionId: 'main', contentBlocks: [{ type: 'text', text: 'first' }] })
+    const [first, replay] = await Promise.all([server.steer(params), server.steer(params)])
+    expect(first).toEqual(replay)
+    expect(steer).toHaveBeenCalledOnce()
+    expect(steer.mock.calls[0]?.[0]).toMatchObject({ id: first.messageId, content: params.contentBlocks, source: { kind: 'user', rpcId: 'input-1' } })
+    expect(() => server.steer({ ...params, contentBlocks: [{ type: 'text', text: 'different' }] })).toThrow('different content')
+    ;(agent as unknown as { status: string }).status = 'idle'
+    await expect(server.steer({ ...params, requestId: 'input-2' })).rejects.toThrow('running session')
+    expect(steer).toHaveBeenCalledOnce()
+    await server.shutdown()
   })
 
   it('admits inline SDK images before the user message enters the session', async () => {

@@ -29,6 +29,11 @@ English | [中文](README.zh.md)
 
 Use this client when TypeScript code must drive a complete Harness runtime from another process and you can name the runtime executable explicitly. The common path is minimal: construct a `DeepSeekHarness` with a launch spec, run prompts, and close it so the child process is always reaped.
 
+<a id="running-session-steering"></a>
+### Running-session steering
+
+`client.steer(sessionId, blocks, requestId)` returns the admitted inbox id for an active session. `client.prompt(sessionId, blocks, requestId?)` and high-level `run` with `requestId` preserve queued-input identity. The runtime owns next-step scheduling and process-local retry receipts.
+
 ### Running agent turns with DeepSeekHarness
 
 ```ts
