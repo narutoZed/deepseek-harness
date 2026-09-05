@@ -11,7 +11,7 @@ import AgentRegistry, { type Agent, type AgentHandle, type AssistantStreamFrame 
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 
-import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionSeq, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
@@ -550,6 +550,76 @@ describe('HarnessSdkJsonRpcServer', () => {
     } finally {
       await ctx.fiber.dispose()
       await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it.each(['one-shot', 'continuable'] as const)('publishes constructor-seeded %s labels without private composition fields', async (mode) => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const transport = new FakeTransport()
+    const server = new HarnessSdkJsonRpcServer(ctx, transport)
+    try {
+      ctx.sessions.create(SessionId('labeled-child'), {
+        meta: { parentSession: SessionId('root') },
+        seed: [{ seq: SessionSeq(0), time: 1, type: 'subagent/descriptor', data: {
+          version: 3, mode, provider: 'spawn', label: 'Inspect the runtime',
+          ...mode === 'continuable' ? { persona: 'Private instructions', toolFilter: { allow: ['bash'] } } : {},
+        } }],
+      })
+      expect(transport.notifications).toContainEqual({ method: 'subagent.started', params: {
+        parentSessionId: 'root', childSessionId: 'labeled-child', mode, provider: 'spawn', label: 'Inspect the runtime',
+      } })
+      expect(JSON.stringify(transport.notifications)).not.toContain('Private instructions')
+      expect(transport.notifications.some(notification => notification.method === 'session.event'
+        && (notification.params?.event as { type?: string } | undefined)?.type === 'subagent/descriptor')).toBe(false)
+    } finally {
+      await server.shutdown()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each([
+    { version: 999, mode: 'continuable', provider: 'spawn', label: 'future' },
+    { version: 3, mode: 'continuable', provider: 'spawn', label: 42 },
+  ])('preserves lineage when persisted descriptor metadata is unsupported: $version / $label', async (descriptor) => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const transport = new FakeTransport()
+    const server = new HarnessSdkJsonRpcServer(ctx, transport)
+    try {
+      ctx.sessions.create(SessionId('unknown-child'), {
+        meta: { parentSession: SessionId('root') },
+        seed: [{ seq: 0, time: 1, type: 'subagent/descriptor', data: descriptor }] as unknown as SessionEvent[],
+      })
+      expect(transport.notifications).toContainEqual({ method: 'subagent.started', params: {
+        parentSessionId: 'root', childSessionId: 'unknown-child',
+      } })
+    } finally {
+      await server.shutdown()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('does not identify a fork using an inherited ancestor descriptor', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const transport = new FakeTransport()
+    const server = new HarnessSdkJsonRpcServer(ctx, transport)
+    try {
+      ctx.sessions.create(SessionId('fork-child'), {
+        meta: { parentSession: SessionId('parent'), isSeeded: true },
+        inheritedEventCount: SessionLogOffset(1),
+        seed: [{ seq: SessionSeq(0), time: 1, type: 'subagent/descriptor', data: {
+          version: 3, mode: 'continuable', provider: 'spawn', label: 'Ancestor label',
+        } }],
+      })
+      expect(transport.notifications).toContainEqual({ method: 'subagent.started', params: {
+        parentSessionId: 'parent', childSessionId: 'fork-child',
+      } })
+      expect(JSON.stringify(transport.notifications)).not.toContain('Ancestor label')
+    } finally {
+      await server.shutdown()
+      await ctx.fiber.dispose()
     }
   })
 

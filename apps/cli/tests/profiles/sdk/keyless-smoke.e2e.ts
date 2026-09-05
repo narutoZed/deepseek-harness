@@ -531,3 +531,63 @@ describe('SDK assistant streaming', () => {
     }
   })
 })
+
+describe('SDK subagent metadata', () => {
+  it.each([true, false])('reports structured metadata for background=%s without parsing tool receipts', async (background) => {
+    const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-metadata-'))
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        const messages = (JSON.parse(body) as { messages: { role: string; content: unknown }[] }).messages
+        const child = messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('metadata-child'))
+        const followup = messages.some(message => message.role === 'tool')
+        const delta = child || followup ? { content: child ? 'child answer' : 'root done' } : {
+          tool_calls: [{ index: 0, id: 'delegate', type: 'function', function: { name: 'subagent', arguments: JSON.stringify({
+            description: 'Inspect native SDK metadata', prompt: 'metadata-child', run_in_background: background,
+          }) } }],
+        }
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.write(`data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant' } }] })}\n\n`)
+        response.write(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`)
+        response.end(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: child || followup ? 'stop' : 'tool_calls' }] })}\n\ndata: [DONE]\n\n`)
+      })
+    })
+    let harness: InstanceType<typeof DeepSeekHarness> | undefined
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, '.dsh'), profile: 'sdk', env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      const result = await harness.run('metadata-root', { sessionId: 'root' })
+      expect(result.finalResponse).toBe('root done')
+      const started = result.notifications.find(notification => notification.method === 'subagent.started')
+      expect(started?.params.parentSessionId).toBe('root')
+      if (background) {
+        expect(started?.params).toMatchObject({
+          label: 'Inspect native SDK metadata', mode: 'continuable', provider: 'spawn',
+        })
+      } else {
+        // Foreground descriptors are appended at the first pre-step, after creation.
+        const metadata = result.notifications.find(notification => notification.method === 'session.event'
+          && notification.params.sessionId === started?.params.childSessionId
+          && (notification.params.event as { type?: string }).type === 'subagent/descriptor')
+        expect(metadata?.params.event).toMatchObject({ data: {
+          label: 'Inspect native SDK metadata', mode: 'one-shot', provider: 'spawn',
+        } })
+      }
+      expect(started?.params.childSessionId).toBeTypeOf('string')
+      expect(started?.params).not.toHaveProperty('persona')
+      expect(started?.params).not.toHaveProperty('prompt')
+    } finally {
+      await harness?.close()
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})

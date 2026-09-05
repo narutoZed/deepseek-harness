@@ -29,6 +29,8 @@ The SDK host receives `interaction.request` when a root agent asks the user a qu
 
 Mount this plugin when a runtime must serve SDK clients: add it to a `cordis.yml` that composes the agent service, boot the runtime, and clients connect over stdio. The common path is explicit — the plugin needs the `agents` service; every other capability comes from the surrounding tree.
 
+The server derives child creation metadata from the durable descriptor at `session/created`. Hosts can display the creation label without correlating tool calls, parsing rendered receipts or opening private session files.
+
 <a id="running-session-steering"></a>
 ### Running-session steering
 

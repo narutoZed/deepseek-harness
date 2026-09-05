@@ -297,7 +297,7 @@ for line in sys.stdin:
         print(json.dumps({"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": root, "event": {"type": "agent/inbox/spliced", "data": {"target": "next-turn", "start": 0, "inserted": [{"id": "message-1"}]}}}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "method": "session.status", "params": {"sessionId": root, "status": "running"}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"messageId": "message-1"}}), flush=True)
-        print(json.dumps({"jsonrpc": "2.0", "method": "subagent.started", "params": {"parentSessionId": root, "childSessionId": "child"}}), flush=True)
+        print(json.dumps({"jsonrpc": "2.0", "method": "subagent.started", "params": {"parentSessionId": root, "childSessionId": "child", "label": "Inspect runtime", "mode": "continuable", "provider": "spawn"}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "child", "event": {"type": "assistant/message", "data": {"content": [{"type": "text", "text": "child response"}]}}}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "method": "subagent.started", "params": {"parentSessionId": "child", "childSessionId": "grandchild"}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "grandchild", "event": {"type": "assistant/message", "data": {"content": [{"type": "text", "text": "grandchild response"}]}}}}), flush=True)
@@ -339,6 +339,10 @@ for line in sys.stdin:
     ]
     assert seen == [notification.method for notification in result.notifications]
 
+
+    started = next(n for n in result.notifications if n.method == "subagent.started")
+    assert started.payload["label"] == "Inspect runtime"
+    assert started.payload["mode"] == "continuable"
 
 def test_session_run_ignores_notifications_for_other_sessions(tmp_path: Path) -> None:
     script = tmp_path / "fake_runtime.py"

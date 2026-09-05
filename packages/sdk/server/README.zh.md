@@ -29,6 +29,8 @@ kind: "package-reference"
 
 当运行时必须服务 SDK 客户端时挂载本插件：把它加入组合了 agent 服务的 `cordis.yml`，启动运行时，客户端即可通过 stdio 连接。常用路径是显式的——插件需要 `agents` 服务；其余每个能力都来自外围插件树。
 
+服务端在 `session/created` 时从持久描述符提取子代理创建元数据。宿主无需关联工具调用、解析渲染后的回执或打开私有会话文件，就能展示创建标签。
+
 <a id="running-session-steering"></a>
 ### 运行中会话的引导
 

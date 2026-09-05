@@ -13,7 +13,8 @@ import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { admitEncodedImages, type EncodedImageAttachment, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, ReasoningEffortId, type ContentBlock, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
 import type {
@@ -129,6 +130,7 @@ export class HarnessSdkJsonRpcServer {
       const payload: SubagentStartedNotification = {
         parentSessionId: String(parentSession),
         childSessionId: String(session.id),
+        ...this.childMetadata(session),
       }
       this.transport.notify('subagent.started', payload)
     }))
@@ -398,6 +400,22 @@ export class HarnessSdkJsonRpcServer {
       () => { this.sessionCreations.delete(sessionId) },
     )
     return creation
+  }
+
+  private childMetadata(session: Session): Pick<SubagentStartedNotification, 'label' | 'mode' | 'provider'> {
+    try {
+      const descriptor = foldSubagentDescriptor(session.ownEvents())
+      if (descriptor === undefined) return {}
+      return {
+        mode: descriptor.mode,
+        provider: descriptor.provider,
+        ...descriptor.label === undefined ? {} : { label: descriptor.label },
+      }
+    } catch (error: unknown) {
+      // Optional display metadata must not prevent publication of the child identity.
+      this.ctx.logger.warn('SDK child descriptor could not be read: %s', error)
+      return {}
+    }
   }
 
   private async createSession(sessionId: string): Promise<SessionRecord> {
