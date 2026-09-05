@@ -6,7 +6,7 @@ English | [中文](2026-09-05-sdk-subagent-creation-metadata.zh.md)
 
 ## Problem
 
-Child descriptors are established in constructor seed history before live session-event forwarding starts. An SDK host therefore receives a child id without the label and mode that the Web catalog can read, forcing it to correlate tool calls or parse rendered tool text.
+A child descriptor can be established during setup or restored history before live session-event forwarding starts. An SDK host therefore receives a child id without the label and mode that the Web catalog can read, forcing it to correlate tool calls or parse rendered tool text.
 
 ## Decision
 

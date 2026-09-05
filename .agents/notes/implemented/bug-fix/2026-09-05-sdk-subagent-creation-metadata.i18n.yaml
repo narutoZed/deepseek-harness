@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-sdk-subagent-creation-metadata.md
-2026-09-05-sdk-subagent-creation-metadata.md: 08d0f64c67b0283229adcb1238bf1d2e5517b0a9
-2026-09-05-sdk-subagent-creation-metadata.zh.md: 9f7c470228db4d4c27b7889868ab90d3d42b122f
+2026-09-05-sdk-subagent-creation-metadata.md: e53f473157f58391b72e17d36efe4f9523e10392
+2026-09-05-sdk-subagent-creation-metadata.zh.md: 3af9764ae5e59cb8c4abafbadf5dc22827ed8959
