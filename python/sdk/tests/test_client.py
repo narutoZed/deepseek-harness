@@ -1090,3 +1090,24 @@ for line in sys.stdin:
         assert client.respond_interaction("question-1", [
             {"id": "task", "selected": [], "custom": "Inspect the SDK"},
         ]) is True
+
+
+def test_session_steer_sends_identified_input_without_waiting_for_completion(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    client = object.__new__(HarnessClient)
+    captured = []
+
+    def request(method, params, **kwargs):
+        captured.append((method, params))
+        return SimpleNamespace(messageId="message-steer")
+
+    monkeypatch.setattr(client, "request", request)
+    result = client.session_steer(
+        "session-1", [{"type": "text", "text": "change direction"}], request_id="input-1",
+    )
+    assert result == "message-steer"
+    assert captured == [("session/steer", {
+        "sessionId": "session-1", "requestId": "input-1",
+        "contentBlocks": [{"type": "text", "text": "change direction"}],
+    })]

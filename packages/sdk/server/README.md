@@ -140,3 +140,9 @@ These limits define when the plugin needs special operational care. They are cur
 This Dev Note is working context for maintainers and is explicitly non-authoritative — shipped behavior and limits live in the sections above and in the code. The single-executable runtime distribution pairs this plugin with the packaged `jsonrpc-demo` bin; keep the shutdown/exit contract consistent with the app bin, which owns EOF and signal exits. No other unresolved design questions are recorded.
 
 </details>
+
+## Running-session steering
+
+`session/steer` accepts `{ sessionId, requestId, contentBlocks }` for an existing running session. It calls the core agent's `steer` operation, inserting input at the next step boundary, and returns the real inbox `messageId`. Identical retries reuse the receipt within the runtime process; reusing a request ID with different content is rejected. Idle or missing sessions are rejected rather than starting unrelated work. Python callers use `client.session_steer(session_id, blocks, request_id=...)`.
+
+`session/prompt` also accepts an optional `requestId` (Python `request_id`) so queued prompts can preserve caller identity in the logged user source. This is correlation, not a promise of cross-process idempotency. Both operations retain the identity as `source.rpcId`. Update the runtime binary together with SDK clients before enabling steering in a deployment.

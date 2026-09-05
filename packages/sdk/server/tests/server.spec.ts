@@ -39,15 +39,16 @@ afterEach(async () => {
   vi.unstubAllEnvs()
 })
 
-async function mockCompletionServer(): Promise<{ url: string; requests: unknown[]; headers: IncomingMessage['headers'][] }> {
+async function mockCompletionServer(beforeReply?: () => Promise<void>): Promise<{ url: string; requests: unknown[]; headers: IncomingMessage['headers'][] }> {
   const requests: unknown[] = []
   const headers: IncomingMessage['headers'][] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = ''
     request.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') })
-    request.on('end', () => {
+    request.on('end', async () => {
       requests.push(JSON.parse(body))
       headers.push(request.headers)
+      await beforeReply?.()
       response.writeHead(200, { 'content-type': 'text/event-stream' })
       response.write('data: {"choices":[{"delta":{"role":"assistant","content":null,"reasoning_content":""}}]}\n\n')
       response.write('data: {"choices":[{"delta":{"content":"done"}}]}\n\n')
@@ -268,6 +269,72 @@ describe('HarnessSdkJsonRpcServer', () => {
     await server.shutdown()
     expect(mainHandle.dispose).toHaveBeenCalledOnce()
     expect(otherHandle.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('persists steering in next-step inbox and includes it in the next model request', { timeout: 15_000 }, async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-sdk-steer-'))
+    const gate = Promise.withResolvers<undefined>()
+    const llmServer = await mockCompletionServer(() => gate.promise)
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
+    vi.stubEnv('DEEPSEEK_BASE_URL', llmServer.url)
+    const ctx = await makeHarness(storageDir)
+    const transport = new FakeTransport()
+    const server = new HarnessSdkJsonRpcServer(ctx, transport)
+    try {
+      await server.initialize({ cwd: storageDir, provider: 'deepseek-official', model: 'dsagent-model' })
+      await server.prompt({ sessionId: 'main', requestId: 'queued-first', contentBlocks: [{ type: 'text', text: 'first' }] })
+      expect(transport.notifications).toContainEqual(expect.objectContaining({
+        method: 'session.event', params: expect.objectContaining({ event: expect.objectContaining({
+          type: 'agent/inbox/spliced', data: expect.objectContaining({ target: 'next-turn', inserted: expect.arrayContaining([
+            expect.objectContaining({ source: { kind: 'user', rpcId: 'queued-first' } }),
+          ]) }),
+        }) }),
+      }))
+      await vi.waitFor(() => { expect(llmServer.requests).toHaveLength(1) })
+      const receipt = await server.handleRequest('session/steer', {
+        sessionId: 'main', requestId: 'steer-real', contentBlocks: [{ type: 'text', text: 'steer-next-step' }],
+      }) as { messageId: string }
+      expect(transport.notifications).toContainEqual(expect.objectContaining({
+        method: 'session.event', params: expect.objectContaining({ event: expect.objectContaining({
+          type: 'agent/inbox/spliced', data: expect.objectContaining({ target: 'next-step', inserted: expect.arrayContaining([
+            expect.objectContaining({ id: receipt.messageId, source: { kind: 'user', rpcId: 'steer-real' } }),
+          ]) }),
+        }) }),
+      }))
+      gate.resolve(undefined)
+      await vi.waitFor(() => { expect(llmServer.requests.length).toBeGreaterThan(1) })
+      expect(JSON.stringify(llmServer.requests[1])).toContain('steer-next-step')
+    } finally {
+      gate.resolve(undefined)
+      await server.shutdown()
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it('steers only an existing running agent and replays the same identified input once', async () => {
+    const steer = vi.fn<Agent['steer']>()
+    const agent = { id: SessionId('main'), status: 'running', followup: vi.fn(), steer } as unknown as Agent
+    const handle = { agent, dispose: vi.fn(async () => {}) }
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      agents: { create: vi.fn(async () => handle), get: () => agent },
+      get: () => undefined,
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    ;(server as unknown as { initialized: boolean }).initialized = true
+    const params = { sessionId: 'main', requestId: 'input-1', contentBlocks: [{ type: 'text' as const, text: 'change direction' }] }
+    await expect(server.steer(params)).rejects.toThrow('existing session')
+    await server.prompt({ sessionId: 'main', contentBlocks: [{ type: 'text', text: 'first' }] })
+    const [first, replay] = await Promise.all([server.steer(params), server.steer(params)])
+    expect(first).toEqual(replay)
+    expect(steer).toHaveBeenCalledOnce()
+    expect(steer.mock.calls[0]?.[0]).toMatchObject({ id: first.messageId, content: params.contentBlocks, source: { kind: 'user', rpcId: 'input-1' } })
+    expect(() => server.steer({ ...params, contentBlocks: [{ type: 'text', text: 'different' }] })).toThrow('different content')
+    ;(agent as unknown as { status: string }).status = 'idle'
+    await expect(server.steer({ ...params, requestId: 'input-2' })).rejects.toThrow('running session')
+    expect(steer).toHaveBeenCalledOnce()
+    await server.shutdown()
   })
 
   it('admits inline SDK images before the user message enters the session', async () => {

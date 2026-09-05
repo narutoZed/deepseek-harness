@@ -126,3 +126,9 @@ These limits define what the protocol does not cover or promise. They are curren
 This Dev Note is working context for maintainers and is explicitly non-authoritative — shipped behavior and limits live in the sections above and in the code. This protocol's shapes are mirrored (not imported) by the Python SDK, so changing a method, payload, or the wire-stable `serverInfo.name` here requires updating the Python counterpart and the TypeScript client in the same change. No other unresolved design questions are recorded.
 
 </details>
+
+## Running-session steering
+
+`session/steer` accepts `{ sessionId, requestId, contentBlocks }` for an existing running session. It calls the core agent's `steer` operation, inserting input at the next step boundary, and returns the real inbox `messageId`. Identical retries reuse the receipt within the runtime process; reusing a request ID with different content is rejected. Idle or missing sessions are rejected rather than starting unrelated work. Python callers use `client.session_steer(session_id, blocks, request_id=...)`.
+
+`session/prompt` also accepts an optional `requestId` (Python `request_id`) so queued prompts can preserve caller identity in the logged user source. This is correlation, not a promise of cross-process idempotency. Both operations retain the identity as `source.rpcId`. Update the runtime binary together with SDK clients before enabling steering in a deployment.

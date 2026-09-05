@@ -174,10 +174,13 @@ class HarnessClient:
         session_id: str,
         content_blocks: list[JsonObject],
         *,
+        request_id: str | None = None,
         on_notification: Callable[[Notification], None] | None = None,
         notification_subscription: "NotificationSubscription | None" = None,
     ) -> str:
         payload: JsonObject = {"sessionId": session_id, "contentBlocks": content_blocks}
+        if request_id is not None:
+            payload["requestId"] = request_id
         response = self.request(
             "session/prompt",
             payload,
@@ -185,6 +188,21 @@ class HarnessClient:
             on_notification=on_notification,
             notification_filter=self._notification_belongs_to_session_tree(session_id),
             notification_subscription=notification_subscription,
+        )
+        return response.messageId
+
+    def session_steer(
+        self,
+        session_id: str,
+        content_blocks: list[JsonObject],
+        *,
+        request_id: str,
+    ) -> str:
+        """Insert input at the next step of a running session; retries reuse request_id."""
+        response = self.request(
+            "session/steer",
+            {"sessionId": session_id, "contentBlocks": content_blocks, "requestId": request_id},
+            response_model=_SessionPromptResponse,
         )
         return response.messageId
 
