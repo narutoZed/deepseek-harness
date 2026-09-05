@@ -29,6 +29,8 @@ English | [中文](README.zh.md)
 
 Use this package when you build or debug an SDK wire end — the serving plugin, a client library, or custom tooling that speaks the SDK protocol. It gives you one transport for JSON-RPC 2.0 over caller-owned byte streams and the typed shapes for every SDK method and notification.
 
+`subagent.started` includes optional `label`, `mode` and subagent `provider` from the first compatible durable descriptor in the child’s own, non-inherited events. Constructor-seeded descriptors need not produce live `session.event` notifications. Missing, unsupported or malformed descriptors leave those display fields absent while preserving parent/child identity. Persona, tool filters and task prompts are not copied into this notification. A foreground descriptor appended after creation remains available through its structured `session.event`; creation metadata does not predict future events.
+
 <a id="running-session-steering"></a>
 ### Running-session steering
 

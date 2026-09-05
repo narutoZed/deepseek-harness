@@ -100,6 +100,12 @@ export interface SubagentStartedNotification {
   parentSessionId: string
   /** The new child session. */
   childSessionId: string
+  /** Creation label from the child's durable descriptor; never parsed from tool output. */
+  label?: string
+  /** Supported descriptor mode, omitted when no compatible descriptor is available. */
+  mode?: 'one-shot' | 'continuable'
+  /** Subagent provider such as spawn or fork, not the child's LLM route. */
+  provider?: string
 }
 
 /** `subagent.finished` payload: an in-process subagent run ended (remote runs are not reported). */
