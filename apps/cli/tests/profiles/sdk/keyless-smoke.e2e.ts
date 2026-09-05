@@ -591,3 +591,64 @@ describe('SDK subagent metadata', () => {
     }
   })
 })
+
+describe('SDK session-tree settlement', () => {
+  it('waits past root idle for a background child and the parent synthesis', async () => {
+    const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+    const { vi } = await import('vitest')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-settlement-'))
+    const release = Promise.withResolvers<undefined>()
+    let rootIdle = false
+    let completed = false
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        const messages = (JSON.parse(body) as { messages: { role: string; content: unknown }[] }).messages
+        const child = messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('settlement-child'))
+        const followup = messages.some(message => message.role === 'tool')
+        const hasAnswer = messages.some(message => JSON.stringify(message.content).includes('finished-child-answer'))
+        const delta = child || followup ? { content: child ? 'finished-child-answer' : hasAnswer ? 'final parent synthesis' : 'waiting for child' } : {
+          tool_calls: [{ index: 0, id: 'delegate', type: 'function', function: { name: 'subagent', arguments: JSON.stringify({
+            description: 'Wait for a delayed child', prompt: 'settlement-child', run_in_background: true,
+          }) } }],
+        }
+        const send = (): void => {
+          response.writeHead(200, { 'content-type': 'text/event-stream' })
+          response.write(`data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant' } }] })}\n\n`)
+          response.write(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`)
+          response.end(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: child || followup ? 'stop' : 'tool_calls' }] })}\n\ndata: [DONE]\n\n`)
+        }
+        if (child) void release.promise.then(send)
+        else send()
+      })
+    })
+    let harness: InstanceType<typeof DeepSeekHarness> | undefined
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, '.dsh'), profile: 'sdk', env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      const run = harness.run('settlement-root', { sessionId: 'root', onNotification(notification) {
+        if (notification.method === 'session.status' && notification.params.sessionId === 'root' && notification.params.status === 'idle') rootIdle = true
+      } })
+      void run.then(() => { completed = true }, () => { completed = true })
+      await vi.waitFor(() => { expect(rootIdle).toBe(true) }, { timeout: 30_000 })
+      expect(completed).toBe(false)
+      release.resolve(undefined)
+      const result = await run
+      expect(result.finalResponse).toBe('final parent synthesis')
+      expect(result.notifications.at(-1)?.method).toBe('session.settled')
+      expect(result.events.filter(event => event.type === 'turn/end')).toHaveLength(2)
+    } finally {
+      release.resolve(undefined)
+      await harness?.close()
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})

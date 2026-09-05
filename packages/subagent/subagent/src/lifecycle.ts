@@ -23,7 +23,7 @@ import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionId, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
 import { finalAssistantOutput } from './assistant-output.ts'
 import { SubagentRunId } from './types.ts'
-import type { SubagentResult, SubagentRun, SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
+import type { SubagentPrepareInfo, SubagentResult, SubagentRun, SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
 
 /**
  * How one Activation's residency epoch ended, as both the terminal lifecycle
@@ -84,6 +84,7 @@ export interface ActivationObserver {
  * a narrowed stand-in would silently change scope filtering.
  */
 export type LifecycleEmitter = {
+  (name: 'subagent/prepare', info: SubagentPrepareInfo, parent: Agent): void
   (name: 'subagent/start', info: SubagentRunInfo, parent: Agent): void
   (name: 'subagent/end', info: SubagentRunEndInfo, parent: Agent): void
   (name: 'subagent/provider-removed', info: string): void
@@ -103,8 +104,8 @@ export function createLifecycleEmitter(
   carrier: (parent: Agent) => object,
 ): LifecycleEmitter {
   return (
-    name: 'subagent/start' | 'subagent/end' | 'subagent/provider-removed',
-    info: SubagentRunInfo | SubagentRunEndInfo | string,
+    name: 'subagent/start' | 'subagent/end' | 'subagent/prepare' | 'subagent/provider-removed',
+    info: SubagentRunInfo | SubagentRunEndInfo | SubagentPrepareInfo | string,
     parent?: Agent,
   ): void => {
     const dispatchArgs: unknown[] = parent === undefined

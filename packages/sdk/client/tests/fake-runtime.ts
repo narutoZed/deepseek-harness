@@ -267,7 +267,14 @@ reader.on('line', (line) => {
         respond({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: process.cwd() } })
         return
       }
-      respond({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } })
+      respond({
+        serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' },
+        ...env.FAKE_MALFORMED_CAPABILITIES !== undefined ? {
+          capabilities: env.FAKE_MALFORMED_CAPABILITIES === 'container' ? 'invalid' : { sessionTreeSettled: 'yes' },
+        } : env.FAKE_TREE_SETTLEMENT === undefined ? {} : {
+          capabilities: { sessionTreeSettled: env.FAKE_TREE_SETTLEMENT === '1' },
+        },
+      })
       return
     case 'session/prompt': {
       const sessionId = sessionIdOf(frame.params)
@@ -318,6 +325,14 @@ reader.on('line', (line) => {
       runTurn(sessionId)
       notify('session.status', { sessionId, status: 'idle' })
       respond({ messageId })
+      if (env.FAKE_TREE_SETTLEMENT === '1') {
+        setImmediate(() => {
+          notify('session.status', { sessionId, status: 'running' })
+          runTurn(sessionId)
+          notify('session.status', { sessionId, status: 'idle' })
+          notify('session.settled', { sessionId })
+        })
+      }
       return
     }
     case 'shutdown':

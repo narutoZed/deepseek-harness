@@ -13,6 +13,8 @@ English | [中文](README.zh.md)
 
 `dsh-sdk-protocol` lets a DeepSeek Harness runtime and its SDK clients exchange JSON-RPC 2.0 messages over newline-delimited byte streams: one transport class plus the named request, result, and notification types both wire ends speak. The serving side is the [`dsh-sdk-jsonrpc-server`](../server/README.md) plugin; the clients are the TypeScript [`dsh-sdk-client`](../client/README.md) and the [Python SDK](../../../python/README.md), which mirrors these shapes without importing them. Use this package when you implement or debug a wire end: framing rules, method names, payload types, and error semantics all live here. It is a pure library — no plugin, no configuration, no registrations.
 
+`InitializeResult.capabilities.sessionTreeSettled` optionally advertises support for the additive `session.settled` notification with `{ sessionId }`. It ends an accepted root activity interval after root idle, an empty next-turn inbox, and native descendant preparation/run settlement. Clients must negotiate this capability before waiting for the marker; raw `session.status` retains its existing meaning.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -55,6 +57,7 @@ Both wire ends share one method set: four client-to-server requests and six serv
 | server→client | `session.event` | `SessionEventNotification` (every session in the runtime, unfiltered) |
 | server→client | `interaction.request` | `InteractionRequestNotification` |
 | server→client | `session.status` | `SessionStatusNotification` (whole-agent `running`/`idle` transition) |
+| server→client | `session.settled` | `SessionSettledNotification` (negotiated root activity completion) |
 | server→client | `session.assistant_stream` | `SessionAssistantStreamNotification` (live assistant stream frame) |
 | server→client | `subagent.started` | `SubagentStartedNotification` |
 | server→client | `subagent.finished` | `SubagentFinishedNotification` (in-process runs only) |

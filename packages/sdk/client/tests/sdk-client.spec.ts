@@ -63,6 +63,32 @@ async function tempDir(prefix: string): Promise<string> {
 }
 
 describe('DeepSeekHarness', () => {
+  it('waits for negotiated tree settlement across an intermediate root idle', async () => {
+    const harness = harnessWith({ FAKE_TREE_SETTLEMENT: '1' })
+    const result = await harness.run('work')
+    expect(harness.supportsSessionTreeSettlement).toBe(true)
+    expect(result.events.filter(event => event.type === 'turn/end')).toHaveLength(2)
+    expect(result.notifications.at(-1)?.method).toBe('session.settled')
+  })
+
+  it('allows explicit first-idle completion on a tree-capable runtime', async () => {
+    const harness = harnessWith({ FAKE_TREE_SETTLEMENT: '1' })
+    const result = await harness.run('dispatch', { waitForSubagents: false })
+    expect(result.events.filter(event => event.type === 'turn/end')).toHaveLength(1)
+    expect(result.notifications.at(-1)?.method).toBe('session.status')
+  })
+
+  it('retains first-idle behavior when the runtime disables tree settlement', async () => {
+    const harness = harnessWith({ FAKE_TREE_SETTLEMENT: '0' })
+    const result = await harness.run('work')
+    expect(harness.supportsSessionTreeSettlement).toBe(false)
+    expect(result.notifications.at(-1)?.method).toBe('session.status')
+  })
+
+  it.each(['container', 'flag'])('rejects malformed capability %s without waiting for activity', async (kind) => {
+    const harness = harnessWith({ FAKE_MALFORMED_CAPABILITIES: kind })
+    await expect(harness.start()).rejects.toThrow('malformed capabilities')
+  })
   it('retains an identified prompt in its durable user source', async () => {
     const harness = harnessWith()
     const result = await harness.run('work', { sessionId: 'main', requestId: 'request-1' })

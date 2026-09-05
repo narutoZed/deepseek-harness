@@ -706,6 +706,28 @@ Types: [Scoped](scope.md)
 
 Source: [`packages/subagent/subagent/src/index.ts`](../../packages/subagent/subagent/src/index.ts)
 
+<a id="subagentprepare--emit"></a>
+
+#### `subagent/prepare` — emit
+
+Provider preparation began or finished. Scope-filtered dispatch keys the carrier by the delegating parent, so listeners observe their own delegations. A successful subagent/start is published before preparation finishes.
+
+```ts cordis-catalog
+/**
+ * Provider preparation began or finished. Scope-filtered dispatch keys the
+ * carrier by the delegating parent, so listeners observe their own delegations.
+ * A successful subagent/start is published before preparation finishes.
+ * @param info - preparation identity and phase, scoped to the delegating parent.
+ * @dshScopeScan unsupported
+ * @mode emit
+ */
+'subagent/prepare'(this: Scoped<SubagentRuntime>, info: SubagentPrepareInfo): void
+```
+
+Types: [Scoped](scope.md)
+
+Source: [`packages/subagent/subagent/src/index.ts`](../../packages/subagent/subagent/src/index.ts)
+
 <a id="subagentprovider-added--emit"></a>
 
 #### `subagent/provider-added` — emit

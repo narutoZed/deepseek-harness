@@ -11,6 +11,8 @@ kind: "package-reference"
 
 `dsh-subagent` 是子 agent 委派背后的服务：agent（智能体）把任务交给具名子 agent，收集完成的结果，并且——对可继续子 agent 而言——跨轮次持续发送后续工作。多个提供方在同一约定下共存，因此单个组合可以并排提供进程内子 agent、进程外 ACP 或 SDK 子 agent，以及真实 Codex 或 Claude Code 子 agent。子 agent 有两种形态：一次性运行以单个结果结算，可继续子 agent 的持久会话则接受后续消息并可被中断。同一服务还回答发现类问题——存在哪些子级、它们的模式、活动状态与血缘——而不加载或恢复它们。把它与至少一个提供方后端和一个委派工具一起挂载；后端与面向模型的工具位于兄弟包中。
 
+`subagent/prepare` 在委派父 agent 的作用域中观察一次性提供方的异步启动。其 `started` 和 `finished` 阶段共享一个进程内 symbol 标记，该标记不参与序列化。准备成功时先发布 `subagent/start` 再发布 `finished`；准备失败时仍发送 `finished`，但不会虚构运行生命周期。因此宿主可以把启动工作计入活动结束判断，无需改变运行 id，也无需把会话创建解释为子 agent 已在运行。
+
 ## 目录
 
 - [使用本包](#use-this-package)

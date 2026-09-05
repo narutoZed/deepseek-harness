@@ -1160,3 +1160,53 @@ for line in sys.stdin:
         result = harness.run("work", on_notification=on_notification)
     assert result.final_response == "complete"
     assert observed.exists()
+
+
+@pytest.mark.parametrize("capability,wait_for_subagents,expected", [
+    (True, True, "final"), (True, False, "intermediate"),
+    (False, True, "intermediate"), ("absent", True, "intermediate"),
+])
+def test_negotiated_tree_settlement_and_legacy_idle(
+    tmp_path: Path, capability, wait_for_subagents: bool, expected: str,
+) -> None:
+    script = tmp_path / "settlement_runtime.py"
+    script.write_text('''
+import json, sys
+capability = json.loads(sys.argv[1])
+def notify(method, payload):
+    print(json.dumps({"jsonrpc": "2.0", "method": method, "params": payload}), flush=True)
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request["method"]
+    if method == "initialize":
+        result = {"serverInfo": {"name": "fake", "version": "test"}}
+        if capability != "absent": result["capabilities"] = {"sessionTreeSettled": capability}
+    elif method == "session/prompt":
+        session = request["params"]["sessionId"]
+        notify("session.event", {"sessionId": session, "event": {"type": "agent/inbox/spliced", "data": {"inserted": [{"id": "input"}]}}})
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"messageId": "input"}}), flush=True)
+        for text in ("intermediate", "final"):
+            notify("session.status", {"sessionId": session, "status": "running"})
+            notify("session.event", {"sessionId": session, "event": {"type": "assistant/message", "data": {"content": [{"type": "text", "text": text}]}}})
+            notify("session.status", {"sessionId": session, "status": "idle"})
+        notify("session.settled", {"sessionId": session})
+        continue
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
+    if method == "shutdown": break
+''', encoding="utf-8")
+    with DeepSeekHarness(_launch_args=(sys.executable, str(script), json.dumps(capability))) as harness:
+        result = harness.run("work", wait_for_subagents=wait_for_subagents)
+    assert result.final_response == expected
+    assert result.notifications[-1].method == (
+        "session.settled" if expected == "final" else "session.status"
+    )
+
+
+def test_capability_flags_are_not_coerced_from_strings() -> None:
+    from pydantic import ValidationError
+    from deepseek_harness.models import InitializeResponse
+
+    with pytest.raises(ValidationError):
+        InitializeResponse.model_validate({"capabilities": {"sessionTreeSettled": "yes"}})

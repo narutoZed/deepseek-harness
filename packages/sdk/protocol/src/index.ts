@@ -24,6 +24,7 @@ export type {
   SessionAssistantStreamNotification,
   SessionEventNotification,
   SessionStatusNotification,
+  SessionSettledNotification,
   SessionPromptParams,
   SessionSteerParams,
   SessionPromptResult,

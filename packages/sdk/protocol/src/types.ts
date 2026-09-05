@@ -31,6 +31,8 @@ export interface InitializeParams {
 export interface InitializeResult {
   /** Wire-stable server identity (`deepseek-harness-sdk-runtime`) and version. */
   serverInfo: { name: string; version: string }
+  /** Optional runtime features; absence preserves compatibility with older runtimes. */
+  capabilities?: { sessionTreeSettled?: boolean }
 }
 
 /** One user turn on one SDK session. */
@@ -84,6 +86,12 @@ export interface SessionStatusNotification {
   sessionId: string
   /** The whole-agent state after the transition. */
   status: 'idle' | 'running'
+}
+
+/** An SDK-owned root activity is idle with no pending wakeup or native descendant run. */
+export interface SessionSettledNotification {
+  /** Root session whose current activity interval has settled. */
+  sessionId: string
 }
 
 /** `session.assistant_stream` payload: one live assistant stream frame for a session. */
@@ -158,6 +166,7 @@ export interface InteractionRespondResult {
 export interface HarnessSdkNotificationMap {
   'session.event': SessionEventNotification
   'session.status': SessionStatusNotification
+  'session.settled': SessionSettledNotification
   'session.assistant_stream': SessionAssistantStreamNotification
   'subagent.started': SubagentStartedNotification
   'subagent.finished': SubagentFinishedNotification
