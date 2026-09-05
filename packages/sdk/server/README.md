@@ -15,6 +15,8 @@ The SDK host receives `interaction.request` when a root agent asks the user a qu
 
 `initialize` advertises `capabilities.sessionTreeSettled: true`. After an accepted prompt, the server emits `session.settled` once the root is idle, its next-turn inbox is empty, and native descendant preparation and run epochs have settled. The server observes native lifecycle events and retains local ancestry across child retirement; remote runs still count as work owned by their local parent. Raw `session.status` remains the root driver status. Settlement includes queued parent follow-up work, but does not assign a result to an individual prompt or replace shutdown disposal.
 
+`session/export` accepts a source session, completed turn, optional end timestamp and a positive byte budget. Cold export reads persistence without starting an agent. `session/fork` imports that seed and attachments into a destination using its initialized model and workspace. Identical targets can be reopened for retry. The trusted caller authorizes both workspaces and keeps snapshot import out of untrusted HTTP inputs.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

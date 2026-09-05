@@ -11,6 +11,8 @@ kind: "package-reference"
 
 `dsh-mcp-client` 把外部 MCP（Model Context Protocol）服务器挂载到 harness 上，让它们的工具像原生工具一样可用。每台服务器一条配置项，模型就能调用该服务器的工具——文件系统、GitHub、数据库或记忆服务器——名称稳定，例如 `mcp__github__create_issue`。当模型需要使用外部工具服务器时添加它；默认不启用任何服务器，因此由你开启。主要成本是这些工具定义给每次请求增加的 token，而且缓慢或崩溃的服务器可能延迟启动，或在恢复前让它的工具一直调用失败。只桥接工具能力：MCP resources 与 prompts 不受支持。
 
+可选的 `config.requestMeta` 通过 `tools/call.params._meta` 传递，与模型填写的参数分离，不改变工具 schema 或参数。宿主负责不可变的调用元数据，并在其变化时重建运行时；传输凭证应放在 URL 或请求头中，而非元数据。
+
 ## 目录
 
 - [使用本包](#use-this-package)

@@ -1,12 +1,21 @@
-# Trusted metadata on MCP tool calls
+# Agent Note: Trusted MCP request metadata
 
-Mesh needs authorized tenant/session identity and selected request option values
-forwarded to a trusted MCP server. The MCP client now accepts optional requestMeta
-and places it in tools/call.params._meta without merging it into model arguments.
-Connection generations retain the metadata through re-sync and reconnect.
-The service owns the allowlist and immutable per-runtime snapshot, so a caller's
-metadata cannot override authenticated identity. Default calls remain unchanged.
+Status: implemented
 
-The MCP client test verifies raw tool name, unchanged arguments and the exact
-_meta envelope. Mesh tests cover field selection, identity precedence and keeping
-transport secrets out of generated patch files.
+English | [中文](2026-09-05-mcp-request-metadata.zh.md)
+
+## Problem
+
+Trusted MCP servers need authorized request metadata separately from model-authored tool arguments.
+
+## Decision
+
+Carry the host-owned immutable requestMeta snapshot in tools/call.params._meta, including reconnect generations.
+
+## Alternatives considered
+
+Merging identity into tool arguments would expose transport concerns in the model schema.
+
+## Consequences
+
+Default calls are unchanged. MCP tests verify arguments and metadata separately; the host owns identity precedence and transport secrets.

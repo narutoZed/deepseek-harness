@@ -191,6 +191,25 @@ class HarnessClient:
         )
         return response.messageId
 
+    def session_export(
+        self, session_id: str, *, turn: int, max_bytes: int, ended_at: int | None = None,
+    ) -> JsonObject:
+        """Read a portable completed-turn seed, including bounded attachment bytes."""
+        response = self.request(
+            "session/export", {"sessionId": session_id, "turn": turn, "maxBytes": max_bytes,
+                               **({"endedAt": ended_at} if ended_at is not None else {})},
+            response_model=_SessionExportResponse,
+        )
+        return response.model_dump(exclude_none=True)
+
+    def session_fork(self, session_id: str, snapshot: JsonObject, *, max_bytes: int) -> JsonObject:
+        """Create an independent seeded session in this runtime's home."""
+        response = self.request(
+            "session/fork", {"sessionId": session_id, "snapshot": snapshot, "maxBytes": max_bytes},
+            response_model=_SessionForkResponse,
+        )
+        return response.model_dump()
+
     def session_steer(
         self,
         session_id: str,
@@ -621,3 +640,15 @@ class _ShutdownResponse(BaseModel):
 
 def _int_or_none(value: object) -> int | None:
     return value if isinstance(value, int) else None
+
+
+class _SessionExportResponse(BaseModel):
+    sourceSessionId: str
+    cwd: str | None = None
+    events: list[dict[str, object]]
+    resources: list[dict[str, object]]
+
+
+class _SessionForkResponse(BaseModel):
+    sessionId: str
+    events: list[dict[str, object]]

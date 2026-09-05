@@ -313,6 +313,66 @@ describe('HarnessSdkJsonRpcServer', () => {
     }
   })
 
+  it('forks a completed prefix into independent durable storage and continues after reopening', { timeout: 20_000 }, async () => {
+    const storage = await mkdtemp(join(tmpdir(), 'dsh-sdk-fork-'))
+    const llmServer = await mockCompletionServer()
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
+    vi.stubEnv('DEEPSEEK_BASE_URL', llmServer.url)
+    const sourceCtx = await makeHarness(join(storage, 'source'))
+    const targetCtx = await makeHarness(join(storage, 'target'))
+    const sourceTransport = new FakeTransport()
+    const targetTransport = new FakeTransport()
+    const source = new HarnessSdkJsonRpcServer(sourceCtx, sourceTransport)
+    const target = new HarnessSdkJsonRpcServer(targetCtx, targetTransport)
+    const initialize = { cwd: storage, provider: 'deepseek-official', model: 'dsagent-model' }
+    try {
+      await source.initialize(initialize)
+      await target.initialize(initialize)
+      await source.prompt({ sessionId: 'source', contentBlocks: [{ type: 'text', text: 'first-turn-only' }] })
+      await vi.waitFor(() => { expect(sourceTransport.notifications.filter(n => n.method === 'session.status' && n.params?.status === 'idle')).toHaveLength(1) })
+      await source.prompt({ sessionId: 'source', contentBlocks: [{ type: 'text', text: 'second-turn-excluded' }] })
+      await vi.waitFor(() => { expect(sourceTransport.notifications.filter(n => n.method === 'session.status' && n.params?.status === 'idle')).toHaveLength(2) })
+      const sourceBefore = sourceCtx.agents.get(SessionId('source'))!.session.snapshotEvents()
+      const snapshot = await source.exportSession({ sessionId: 'source', turn: 1, maxBytes: 1000000 })
+      expect(JSON.stringify(snapshot.events)).toContain('first-turn-only')
+      expect(JSON.stringify(snapshot.events)).not.toContain('second-turn-excluded')
+      await sourceCtx.sessionPersistence.flush()
+      const readCtx = await makeHarness(join(storage, 'source'))
+      const readServer = new HarnessSdkJsonRpcServer(readCtx, new FakeTransport())
+      try {
+        await readServer.initialize(initialize)
+        const cold = await readServer.exportSession({ sessionId: 'source', turn: 1, maxBytes: 1000000 })
+        expect(cold.events).toEqual(snapshot.events)
+        expect(readCtx.agents.get(SessionId('source'))).toBeUndefined()
+      } finally { await readServer.shutdown(); await readCtx.fiber.dispose() }
+      const result = await target.forkSession({ sessionId: 'branch', snapshot, maxBytes: 1000000 })
+      expect(result.sessionId).toBe('branch')
+      expect(targetCtx.agents.get(SessionId('branch'))!.session.header.parentSession).toBe('source')
+      expect(sourceCtx.agents.get(SessionId('source'))!.session.snapshotEvents()).toEqual(sourceBefore)
+      await target.forkSession({ sessionId: 'branch', snapshot, maxBytes: 1000000 })
+      await target.shutdown()
+      await targetCtx.fiber.dispose()
+      const reopenedCtx = await makeHarness(join(storage, 'target'))
+      const reopenedTransport = new FakeTransport()
+      const reopened = new HarnessSdkJsonRpcServer(reopenedCtx, reopenedTransport)
+      try {
+        await reopened.initialize(initialize)
+        await reopened.prompt({ sessionId: 'branch', contentBlocks: [{ type: 'text', text: 'continue-branch' }] })
+        await vi.waitFor(() => { expect(llmServer.requests).toHaveLength(3) })
+        const request = JSON.stringify(llmServer.requests[2])
+        expect(request).toContain('first-turn-only')
+        expect(request).toContain('continue-branch')
+        expect(request).not.toContain('second-turn-excluded')
+      } finally { await reopened.shutdown(); await reopenedCtx.fiber.dispose() }
+    } finally {
+      await source.shutdown()
+      await target.shutdown()
+      await sourceCtx.fiber.dispose()
+      await targetCtx.fiber.dispose()
+      await rm(storage, { recursive: true, force: true })
+    }
+  })
+
   it('steers only an existing running agent and replays the same identified input once', async () => {
     const steer = vi.fn<Agent['steer']>()
     const agent = { id: SessionId('main'), status: 'running', followup: vi.fn(), steer } as unknown as Agent

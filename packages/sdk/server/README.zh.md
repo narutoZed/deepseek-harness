@@ -15,6 +15,8 @@ kind: "package-reference"
 
 `initialize` 声明 `capabilities.sessionTreeSettled: true`。接受提示词后，服务器在根 agent 空闲、其 next-turn inbox 为空且原生后代的准备阶段和运行周期均结束时发送一次 `session.settled`。服务器观察原生生命周期事件，并在子 agent 退出后保留本地祖先关系；远程运行仍计入其本地父 agent 拥有的工作。原始 `session.status` 仍表示根驱动器的状态。活动结束涵盖排队的父 agent 后续工作，但不把结果归属于单个提示词，也不替代关闭时的资源释放。
 
+`session/export` 接受源会话、已完成轮次、可选结束时间及正数的字节预算。冷导出直接读取持久数据，不启动 agent。`session/fork` 将种子及附件导入目标，使用目标初始化时的模型和工作区。相同目标可重新打开以重试。可信调用方负责授权两侧工作区，不向不可信 HTTP 输入开放快照导入。
+
 ## 目录
 
 - [使用本包](#use-this-package)

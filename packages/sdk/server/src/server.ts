@@ -7,14 +7,17 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { resolve } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { admitEncodedImages, type EncodedImageAttachment, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, ReasoningEffortId, type ContentBlock, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
-import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { SessionLogOffset, type Session, type SessionId } from '@deepseek-ai/dsh-session'
 import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
+import { exportFork, importFork } from './fork.ts'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentPrepareInfo, SubagentRunEndInfo, SubagentRunInfo } from '@deepseek-ai/dsh-subagent'
 import { SdkSessionSettlement } from './session-settlement.ts'
@@ -35,6 +38,10 @@ import type {
   SessionPromptParams,
   SessionSteerParams,
   SessionSettledNotification,
+  SessionExportParams,
+  SessionForkParams,
+  SessionForkResult,
+  SessionForkSnapshot,
   SessionPromptResult,
   SdkEncodedImageBlock,
   SubagentFinishedNotification,
@@ -314,10 +321,83 @@ export class HarnessSdkJsonRpcServer {
     return { messageId: message.id }
   }
 
+  private assertNotShuttingDown(): void {
+    if (this.shuttingDown) throw new Error('SDK server is shutting down')
+  }
+
   private assertRunningAgent(rec: SessionRecord, sessionId: string): void {
     this.assertLiveAgent(rec, sessionId)
     if (this.shuttingDown || rec.handle.agent.status !== 'running') {
       throw new Error('session/steer requires a running session')
+    }
+  }
+
+  /**
+   * Export an existing completed turn without starting a model request.
+   * @param params - Source identity, completed turn, optional timestamp and byte budget.
+   * @returns A portable seed with all referenced attachment bytes.
+   */
+  async exportSession(params: SessionExportParams): Promise<SessionForkSnapshot> {
+    if (!this.initialized || this.shuttingDown) throw new Error('SDK server is not active')
+    const rec = this.sessions.get(params.sessionId)
+    if (rec !== undefined) {
+      this.assertLiveAgent(rec, params.sessionId)
+      return exportFork(this.ctx, rec.handle.agent.session, params.turn, params.maxBytes, params.endedAt)
+    }
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) throw new Error('session export requires persistence')
+    const id = brandString<SessionId>(params.sessionId)
+    const handle = await persistence.open(id, 'read')
+    try {
+      const events = await handle.read(SessionLogOffset(0))
+      return await exportFork(
+        this.ctx, { id, header: handle.header, snapshotEvents: () => events },
+        params.turn, params.maxBytes, params.endedAt,
+      )
+    } finally { await handle.close() }
+  }
+
+  /**
+   * Create an ordinary seeded conversation; the core validates balanced history.
+   * @param params - New session identity, exported seed and byte budget.
+   * @returns The created session identity and full constructor history for replay.
+   */
+  async forkSession(params: SessionForkParams): Promise<SessionForkResult> {
+    if (!this.initialized || this.shuttingDown) throw new Error('SDK server is not active')
+    if (typeof params.sessionId !== 'string' || params.sessionId.length === 0) throw new TypeError('sessionId is required')
+    const seed = await importFork(this.ctx, params.snapshot, params.maxBytes)
+    this.assertNotShuttingDown()
+    let handle = this.sessions.get(params.sessionId)?.handle
+    if (handle === undefined) {
+      try {
+        handle = await this.ctx.agents.create({
+          sessionId: brandString<SessionId>(params.sessionId), seed,
+          inheritedEventCount: SessionLogOffset(seed.length),
+          meta: { cwd: this.cwd, parentSession: brandString<SessionId>(params.snapshot.sourceSessionId), isSeeded: true },
+          agentOptions: this.agentOptions(),
+        })
+      } catch (error) {
+        if (!(error instanceof Error && error.message === `session "${params.sessionId}" already exists`)) throw error
+        handle = await this.ctx.agents.resume({
+          resumeSessionId: brandString<SessionId>(params.sessionId), agentOptions: this.agentOptions(),
+        })
+      }
+    }
+    const session = handle.agent.session
+    if (session.header.parentSession !== params.snapshot.sourceSessionId
+      || session.inheritedEventCount !== seed.length
+      || !isDeepStrictEqual(session.snapshotEvents().slice(0, seed.length), seed)) {
+      throw new Error('fork target already contains different history')
+    }
+    this.sessions.set(params.sessionId, { handle })
+    return { sessionId: params.sessionId, events: [...handle.agent.session.snapshotEvents()] }
+  }
+
+  private agentOptions() {
+    return {
+      provider: this.provider, model: this.model,
+      ...(this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort }),
+      ...(this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens }),
     }
   }
 
@@ -387,6 +467,10 @@ export class HarnessSdkJsonRpcServer {
         return this.prompt(params as unknown as SessionPromptParams)
       case 'session/steer':
         return this.steer(params as unknown as SessionSteerParams)
+      case 'session/export':
+        return this.exportSession(params as unknown as SessionExportParams)
+      case 'session/fork':
+        return this.forkSession(params as unknown as SessionForkParams)
       case 'interaction/respond':
         return this.respondInteraction(params as unknown as InteractionRespondParams)
       case 'shutdown':
@@ -456,12 +540,7 @@ export class HarnessSdkJsonRpcServer {
     // deployment that configures a roster has to join one here first
     // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
     const id = brandString<SessionId>(sessionId)
-    const agentOptions = {
-      provider: this.provider,
-      model: this.model,
-      ...this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort },
-      ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
-    }
+    const agentOptions = this.agentOptions()
     let handle: AgentHandle
     try {
       handle = await this.ctx.agents.create({

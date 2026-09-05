@@ -37,6 +37,8 @@ print(result.final_response)
 <a id="running-session-steering"></a>
 当运行时声明 `capabilities.sessionTreeSettled` 时，`Session.run()` 和 `DeepSeekHarness.run()` 默认等待 `session.settled`，涵盖原生后代的准备阶段、活跃运行及排队的父 agent 后续轮次。传入 `wait_for_subagents=False` 可在根 agent 首次空闲时返回。未声明此能力的旧运行时保留首次空闲返回行为。活动结束不能替代 `close()` 负责的资源清理。
 
+可信宿主先调用 `client.session_export(session_id, turn=1, max_bytes=67108864, ended_at=...)`，再调用另一运行时的 `client.session_fork(new_session_id, snapshot, max_bytes=67108864)`。源历史不变，附件通过存储能力复制，目标是持久的种子会话。宿主须在调用前授权源和目标。
+
 ## 运行中会话的引导
 
 `client.session_steer(session_id, blocks, request_id=...)` 返回运行会话中已准入消息的收件箱 id。`session_prompt` 和高层 `run` 接受可选 `request_id`，用于关联排队输入。中途引导需要匹配的运行时版本。

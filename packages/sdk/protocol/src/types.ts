@@ -51,6 +51,39 @@ export interface SessionSteerParams extends SessionPromptParams {
   requestId: string
 }
 
+/** A portable attachment in a bounded internal fork snapshot. */
+export interface SdkForkResource {
+  kind: 'image' | 'file'
+  ref: Record<string, unknown>
+  data: string
+}
+
+/** Complete seed data transported between trusted SDK runtimes. */
+export interface SessionForkSnapshot {
+  sourceSessionId: string
+  cwd?: string
+  events: SessionEvent[]
+  resources: SdkForkResource[]
+}
+
+export interface SessionExportParams {
+  sessionId: string
+  turn: number
+  endedAt?: number
+  maxBytes: number
+}
+
+export interface SessionForkParams {
+  sessionId: string
+  snapshot: SessionForkSnapshot
+  maxBytes: number
+}
+
+export interface SessionForkResult {
+  sessionId: string
+  events: SessionEvent[]
+}
+
 /** Inline raster input admitted into the runtime's durable attachment store. */
 export interface SdkEncodedImageBlock {
   type: 'image'
@@ -178,6 +211,8 @@ export interface HarnessSdkRequestMap {
   'initialize': { params: InitializeParams; result: InitializeResult }
   'session/prompt': { params: SessionPromptParams; result: SessionPromptResult }
   'session/steer': { params: SessionSteerParams; result: SessionPromptResult }
+  'session/export': { params: SessionExportParams; result: SessionForkSnapshot }
+  'session/fork': { params: SessionForkParams; result: SessionForkResult }
   'interaction/respond': { params: InteractionRespondParams; result: InteractionRespondResult }
   'shutdown': { params: undefined; result: Record<string, never> }
 }

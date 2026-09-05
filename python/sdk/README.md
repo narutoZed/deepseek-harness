@@ -37,6 +37,8 @@ print(result.final_response)
 <a id="running-session-steering"></a>
 When the runtime advertises `capabilities.sessionTreeSettled`, `Session.run()` and `DeepSeekHarness.run()` default to waiting for `session.settled`, including native descendant preparation, active runs, and queued parent follow-up turns. Pass `wait_for_subagents=False` to return at the first root idle. Older runtimes without the capability retain first-idle behavior. Settlement does not replace resource teardown through `close()`.
 
+Trusted hosts call `client.session_export(session_id, turn=1, max_bytes=67108864, ended_at=...)`, then another runtime’s `client.session_fork(new_session_id, snapshot, max_bytes=67108864)`. Source history is unchanged; attachments are copied through storage capabilities and the target is a durable seeded conversation. The host authorizes source and destination before calling these methods.
+
 ## Running-session steering
 
 `client.session_steer(session_id, blocks, request_id=...)` returns the admitted inbox id for an active session. `session_prompt` and high-level `run` accept optional `request_id` for queued-input correlation. Steering requires the matching runtime version.

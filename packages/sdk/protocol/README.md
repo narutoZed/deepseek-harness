@@ -15,6 +15,8 @@ English | [中文](README.zh.md)
 
 `InitializeResult.capabilities.sessionTreeSettled` optionally advertises support for the additive `session.settled` notification with `{ sessionId }`. It ends an accepted root activity interval after root idle, an empty next-turn inbox, and native descendant preparation/run settlement. Clients must negotiate this capability before waiting for the marker; raw `session.status` retains its existing meaning.
 
+`session/export` and `session/fork` transfer a bounded completed-turn seed between trusted SDK runtimes. The snapshot contains source identity, durable events and attachment bytes. Fork results contain the destination identity and constructor history for a public projection.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

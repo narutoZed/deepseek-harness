@@ -15,6 +15,8 @@ kind: "package-library"
 
 `InitializeResult.capabilities.sessionTreeSettled` 可选声明对新增 `session.settled` 通知的支持，载荷为 `{ sessionId }`。根 agent 空闲、next-turn inbox 为空且原生后代的准备和运行结束后，该通知结束已接受的根活动区间。客户端必须协商此能力后再等待该标记；原始 `session.status` 保留既有含义。
 
+`session/export` 和 `session/fork` 在可信 SDK 运行时之间传递有大小限制的已完成轮次种子。快照包含源身份、持久事件和附件字节。Fork 结果包含目标身份和构造历史，供公开投影使用。
+
 ## 目录
 
 - [使用本包](#use-this-package)

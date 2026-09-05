@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 `dsh-mcp-client` attaches external Model Context Protocol (MCP) servers to the harness so their tools work like any native tool. With one configuration entry per server, the model can call that server's tools — a filesystem, GitHub, database, or memory server — under stable names such as `mcp__github__create_issue`. Add it when the model should work with an external tool server; nothing ships enabled, so you opt in. The main cost is the tokens those tool definitions add to every request, and a slow or crashed server can delay startup or leave its tools failing until it recovers. Only tools are bridged: MCP resources and prompts are not supported.
 
+Optional `config.requestMeta` travels in `tools/call.params._meta`, separately from model-authored arguments. It changes neither the tool schema nor its arguments. The host owns the immutable invocation-scoped metadata and recreates the runtime when it changes; transport credentials belong in URL/headers, not metadata.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -210,11 +212,3 @@ This Dev Note is working context for maintainers: open design questions and dire
 - The pinned MCP SDK is still evolving; a breaking upstream change requires updating the bridge.
 
 </details>
-
-## Trusted request metadata
-
-Optional `config.requestMeta` is sent as `tools/call.params._meta` alongside the
-model-authored `arguments`. It does not change the tool schema or expose these
-fields as model arguments. The host supplies an invocation-scoped snapshot;
-recreate the runtime when that snapshot changes. Leave it unset to preserve
-ordinary MCP calls. Credentials belong to the transport URL/headers, not metadata.
