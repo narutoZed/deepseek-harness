@@ -280,7 +280,18 @@ export class HarnessClient {
       || typeof result.serverInfo.name !== 'string' || typeof result.serverInfo.version !== 'string') {
       throw new SdkProtocolError(`initialize returned no server identity: ${JSON.stringify(result)}`)
     }
-    return { serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version } }
+    let capabilities: InitializeResult['capabilities']
+    if (result.capabilities !== undefined) {
+      if (!isRecord(result.capabilities)
+        || (result.capabilities.sessionTreeSettled !== undefined && typeof result.capabilities.sessionTreeSettled !== 'boolean')) {
+        throw new SdkProtocolError('initialize returned malformed capabilities')
+      }
+      capabilities = { sessionTreeSettled: result.capabilities.sessionTreeSettled === true }
+    }
+    return {
+      serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version },
+      ...capabilities === undefined ? {} : { capabilities },
+    }
   }
 
   /**

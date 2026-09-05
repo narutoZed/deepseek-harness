@@ -13,6 +13,8 @@ kind: "package-library"
 
 `dsh-sdk-protocol` 让 DeepSeek Harness 运行时与其 SDK 客户端通过按换行分帧的字节流交换 JSON-RPC 2.0 消息：一个传输类，加上协议两端共同使用的具名请求、结果与通知类型。服务端是 [`dsh-sdk-jsonrpc-server`](../server/README.zh.md) 插件；客户端是 TypeScript 的 [`dsh-sdk-client`](../client/README.zh.md) 与 [Python SDK](../../../python/README.zh.md)（后者复现这些结构但不导入它们）。当你实现或调试协议某一端时使用本包：分帧规则、方法名、载荷类型与错误语义都在这里。它是纯库——无插件、无配置、无注册。
 
+`InitializeResult.capabilities.sessionTreeSettled` 可选声明对新增 `session.settled` 通知的支持，载荷为 `{ sessionId }`。根 agent 空闲、next-turn inbox 为空且原生后代的准备和运行结束后，该通知结束已接受的根活动区间。客户端必须协商此能力后再等待该标记；原始 `session.status` 保留既有含义。
+
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -55,6 +57,7 @@ kind: "package-library"
 | server→client | `session.event` | `SessionEventNotification`（运行时内每个会话，不过滤） |
 | server→client | `interaction.request` | `InteractionRequestNotification` |
 | server→client | `session.status` | `SessionStatusNotification`（整个 agent 的 `running`/`idle` 转换） |
+| server→client | `session.settled` | `SessionSettledNotification`（协商确定的根活动结束） |
 | server→client | `session.assistant_stream` | `SessionAssistantStreamNotification`（实时 assistant stream frame） |
 | server→client | `subagent.started` | `SubagentStartedNotification` |
 | server→client | `subagent.finished` | `SubagentFinishedNotification`（仅进程内运行） |

@@ -49,6 +49,20 @@ export interface SubagentRunInfo {
   readonly local: boolean
 }
 
+declare const subagentPrepareTokenBrand: unique symbol
+/** Process-local preparation identity; it is compared by reference and never serialized. */
+export type SubagentPrepareToken = symbol & { readonly [subagentPrepareTokenBrand]: true }
+
+/** Provider preparation before a published run, independent of run result settlement. */
+export interface SubagentPrepareInfo {
+  /** Process-local identity shared by the preparation's two phases. */
+  readonly token: SubagentPrepareToken
+  /** Provider whose asynchronous start is pending or failed. */
+  readonly provider: string
+  /** Finished follows either the published start event or failed preparation. */
+  readonly phase: 'started' | 'finished'
+}
+
 /**
  * Observe-only outcome detail for a settled subagent run, carried by
  * `subagent/end` and paired with one {@link SubagentRunInfo} by `runId`.

@@ -88,6 +88,7 @@ class DeepSeekHarness:
             _launch_args=_launch_args,
         )
         self._initialized = False
+        self._session_tree_settled = False
 
     def __enter__(self) -> "DeepSeekHarness":
         self.start()
@@ -104,13 +105,14 @@ class DeepSeekHarness:
         if self._initialized:
             return
         self._client.start()
-        self._client.initialize(
+        initialized = self._client.initialize(
             cwd=self._cwd,
             provider=self.config.provider,
             model=self.config.model,
             reasoning_effort=self.config.reasoning_effort,
             max_tokens=self.config.max_tokens,
         )
+        self._session_tree_settled = initialized.capabilities.sessionTreeSettled
         self._initialized = True
 
     def close(self) -> None:
@@ -128,8 +130,12 @@ class DeepSeekHarness:
         session_id: str | None = None,
         on_notification: Callable[[Notification], None] | None = None,
         request_id: str | None = None,
+        wait_for_subagents: bool = True,
     ) -> RunResult:
-        return self.start_session(session_id).run(input, on_notification=on_notification, request_id=request_id)
+        return self.start_session(session_id).run(
+            input, on_notification=on_notification, request_id=request_id,
+            wait_for_subagents=wait_for_subagents,
+        )
 
 
 class Session:
@@ -143,8 +149,10 @@ class Session:
         *,
         on_notification: Callable[[Notification], None] | None = None,
         request_id: str | None = None,
+        wait_for_subagents: bool = True,
     ) -> RunResult:
         content_blocks = normalize_input(input)
+        wait_for_tree = wait_for_subagents and self.harness._session_tree_settled
         notifications: list[Notification] = []
         events: list[JsonObject] = []
 
@@ -177,9 +185,11 @@ class Session:
                     received = True
                 collect(notification)
                 if (
-                    notification.method == "session.status"
-                    and notification.payload.get("sessionId") == self.id
-                    and notification.payload.get("status") == "idle"
+                    notification.payload.get("sessionId") == self.id
+                    and (
+                        notification.method == "session.settled" if wait_for_tree else
+                        notification.method == "session.status" and notification.payload.get("status") == "idle"
+                    )
                 ):
                     break
 

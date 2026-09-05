@@ -13,6 +13,8 @@ kind: "package-reference"
 
 `dsh-sdk-jsonrpc-server` 通过 stdio 服务 SDK 协议格式，使进程外客户端能够驱动 harness agent（智能体）：它为每个 `sessionId` 打开一个会话、把用户提示词排入队列，并把每个会话事件、agent 状态转换、实时 assistant stream frame 与 subagent 生命周期更新实时流回客户端。把它作为 `jsonrpc` 插件挂载到 Loader 组合中；外围插件树提供其余一切——agent、模型适配器、持久化与工具。Stdout 只承载 JSON-RPC 帧，因此部署不得组合 stdout logger。它通过 dispose（资源释放）根运行时并以 0 退出应答 `shutdown`；EOF 与信号退出归 app bin 负责。
 
+`initialize` 声明 `capabilities.sessionTreeSettled: true`。接受提示词后，服务器在根 agent 空闲、其 next-turn inbox 为空且原生后代的准备阶段和运行周期均结束时发送一次 `session.settled`。服务器观察原生生命周期事件，并在子 agent 退出后保留本地祖先关系；远程运行仍计入其本地父 agent 拥有的工作。原始 `session.status` 仍表示根驱动器的状态。活动结束涵盖排队的父 agent 后续工作，但不把结果归属于单个提示词，也不替代关闭时的资源释放。
+
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -134,7 +136,7 @@ Stdout 只承载 JSON-RPC 帧，客户端可以逐字节解析；诊断信息应
 这些限制说明本插件何时需要特别的运维注意。它们是当前包约束，不是与其他服务方式的对比或任务积压。
 
 - **协议没有逐会话关闭或提示词取消方法**——SDK 创建的 agent 会一直存活到进程关闭。
-- **没有逐提示词结果**——`MessageId` 只标识 inbox 准入；拥有自动化活动区间的客户端必须自行定义并观察该区间。
+- **没有逐提示词结果**——`MessageId` 只标识 inbox 准入；`session.settled` 观察共享活动区间，不把其输出归属于某条提示词。
 - **stdout 纯净性由部署保证**——外围配置仍可能加载 stdout logger 并破坏 JSON-RPC 通道；此插件不会检查或否决同级 logger。
 - **自动挂载适配器仅支持 DeepSeek**——`initialize` 可以复用任何预先注册的模型适配器，但唯一的回退行为是挂载 DeepSeek 适配器。
 

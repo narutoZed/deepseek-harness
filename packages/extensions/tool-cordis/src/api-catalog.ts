@@ -3314,6 +3314,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'info', description: 'the run identity and terminal outcome.' }],
   },
   {
+    name: 'subagent/prepare',
+    mode: 'emit',
+    signature: '\'subagent/prepare\'(this: Scoped<SubagentRuntime>, info: SubagentPrepareInfo): void',
+    summary: 'Provider preparation began or finished.',
+    description: 'Provider preparation began or finished. Scope-filtered dispatch keys the carrier by the delegating parent, so listeners observe their own delegations. A successful subagent/start is published before preparation finishes.',
+    parameters: [{ name: 'info', description: 'preparation identity and phase, scoped to the delegating parent.' }],
+  },
+  {
     name: 'subagent/provider-added',
     mode: 'emit',
     signature: '\'subagent/provider-added\'(provider: SubagentProvider): void',
@@ -5608,6 +5616,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubagentListEntry',
     declaration: 'export type SubagentListEntry = {\n    readonly kind: \'child\';\n    readonly id: SessionId;\n    readonly activity: \'running\' | \'inactive\';\n    readonly hasChildren: boolean;\n} & ({\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n} | {\n    readonly mode: \'continuable\';\n    readonly label: string;\n}) | {\n    readonly kind: \'diagnostic\';\n    readonly id: SessionId;\n    readonly reason: \'corrupt\' | \'unsupported\' | \'unavailable\';\n};',
+  },
+  {
+    name: 'SubagentPrepareInfo',
+    declaration: 'export interface SubagentPrepareInfo {\n    readonly token: SubagentPrepareToken;\n    readonly provider: string;\n    readonly phase: \'started\' | \'finished\';\n}',
+  },
+  {
+    name: 'SubagentPrepareToken',
+    declaration: 'export type SubagentPrepareToken = symbol & {\n    readonly [subagentPrepareTokenBrand]: true;\n};',
   },
   {
     name: 'SubagentPromptReceipt',

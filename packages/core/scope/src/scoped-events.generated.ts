@@ -28,6 +28,7 @@ const scopedSubjectResolvers: Readonly<Record<string, ScopedSubjectResolver | nu
   'session/event': null,
   'session/flush': null,
   'subagent/end': null,
+  'subagent/prepare': null,
   'subagent/start': null,
   'system-prompt/assemble': args => (args[1] as Record<string, unknown>)['scope'],
   'tools/execute': args => (args[0] as Record<string, unknown>)['agent'],

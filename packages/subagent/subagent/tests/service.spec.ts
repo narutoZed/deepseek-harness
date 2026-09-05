@@ -13,6 +13,7 @@ import SubagentRuntime, {
   type ResolvedSubagentStartRequest,
   type SubagentCapabilities,
   type SubagentProvider,
+  type SubagentPrepareInfo,
   type SubagentResult,
   type SubagentRun,
   type SubagentRunEndInfo,
@@ -205,20 +206,27 @@ describe('SubagentRuntime', () => {
     const parent = fakeParent('delegator')
     const events: string[] = []
     const keys: unknown[] = []
+    const preparations: unknown[] = []
+    ctx.on('subagent/prepare', function (info) {
+      events.push(info.phase)
+      preparations.push(info.token)
+      expect(carrierKeyOf(this)).toBe(parent)
+    })
     const runIds: string[] = []
     ctx.on('subagent/start', function (info) { events.push('start'); keys.push(carrierKeyOf(this)); runIds.push(info.runId) })
     ctx.on('subagent/end', function (info) { events.push('end'); keys.push(carrierKeyOf(this)); runIds.push(info.runId) })
 
     const starting = subagents.start('deferred', baseRequest({ parent }))
     await Promise.resolve()
-    expect(events).toEqual([])
+    expect(events).toEqual(['started'])
     ready.resolve({ id: SessionId('child'), localAgent: undefined, result: result.promise, async dispose() {} })
     const run = await starting
-    expect(events).toEqual(['start'])
+    expect(events).toEqual(['started', 'start', 'finished'])
+    expect(preparations[0]).toBe(preparations[1])
     result.resolve({ output: [{ type: 'text', text: 'answer' }], stopReason: 'completed' })
     await run.result
     await Promise.resolve()
-    expect(events).toEqual(['start', 'end'])
+    expect(events).toEqual(['started', 'start', 'finished', 'end'])
     expect(keys).toEqual([parent, parent])
     expect(runIds[0]).toBe(runIds[1])
   })
@@ -245,11 +253,15 @@ describe('SubagentRuntime', () => {
       inheritsParentContext: false,
       start: async () => { throw new Error('setup rolled back') },
     })
+    const preparations = vi.fn<(info: SubagentPrepareInfo) => void>()
+    ctx.on('subagent/prepare', preparations)
     const lifecycle = vi.fn()
     ctx.on('subagent/start', lifecycle)
     ctx.on('subagent/end', lifecycle)
     await expect(subagents.start('failed', baseRequest())).rejects.toThrow('setup rolled back')
     expect(lifecycle).not.toHaveBeenCalled()
+    expect(preparations.mock.calls.map(([info]) => info.phase)).toEqual(['started', 'finished'])
+    expect(preparations.mock.calls[0]![0].token).toBe(preparations.mock.calls[1]![0].token)
   })
 
   it('emits an enriched end event and maps result rejection to error telemetry', async () => {

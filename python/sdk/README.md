@@ -35,6 +35,8 @@ print(result.final_response)
 `DeepSeekHarness` starts lazily and reuses its runtime until `close()` or context-manager exit. The initial profile handshake has an independent 30-second default bound through `initialize_timeout_seconds`; ordinary turns remain unbounded unless `request_timeout_seconds` is set. A timeout names the selected profile and includes retained runtime diagnostics. `cwd` is the agent workspace; `runtime_cwd` independently selects the subprocess working directory. Both become absolute before launch. `provider`, `model`, optional `reasoning_effort`, and optional positive `max_tokens` are sent during JSON-RPC initialization. `base_url` and `api_key` explicitly override `DEEPSEEK_BASE_URL` and `DEEPSEEK_API_KEY` in the child environment.
 
 <a id="running-session-steering"></a>
+When the runtime advertises `capabilities.sessionTreeSettled`, `Session.run()` and `DeepSeekHarness.run()` default to waiting for `session.settled`, including native descendant preparation, active runs, and queued parent follow-up turns. Pass `wait_for_subagents=False` to return at the first root idle. Older runtimes without the capability retain first-idle behavior. Settlement does not replace resource teardown through `close()`.
+
 ## Running-session steering
 
 `client.session_steer(session_id, blocks, request_id=...)` returns the admitted inbox id for an active session. `session_prompt` and high-level `run` accept optional `request_id` for queued-input correlation. Steering requires the matching runtime version.
@@ -70,7 +72,7 @@ The shipped `sdk-minimal` profile is a standalone explicit tree rather than an o
 
 ## Results and notifications
 
-`Session.run()` owns an activity interval from its prompt's durable inbox receipt through the next whole-agent idle and returns `RunResult(session_id, final_response, finish_reason, events, notifications)`. `final_response` is the last committed root-session assistant text in the interval. `finish_reason` is the `kind` of the last root-session `turn/end`, such as `completed`, `max-tokens`, or `error`, and is `None` when no turn ended. A `turn/end` without a string `data.reason.kind` violates the protocol and raises `SdkProtocolError`.
+`Session.run()` owns an activity interval from its prompt's durable inbox receipt through the negotiated activity boundary and returns `RunResult(session_id, final_response, finish_reason, events, notifications)`. `final_response` is the last committed root-session assistant text in the interval. `finish_reason` is the `kind` of the last root-session `turn/end`, such as `completed`, `max-tokens`, or `error`, and is `None` when no turn ended. A `turn/end` without a string `data.reason.kind` violates the protocol and raises `SdkProtocolError`.
 
 `HarnessClient` retains discovered subagent ancestry for the runtime process lifetime. During `Session.run()`, `RunResult.notifications` and `on_notification` receive the root session and known descendants in wire order. `RunResult.events` contains root-session events only, so descendant output cannot replace the root response. The low-level `session_prompt()` returns the queued message id immediately; callers that bypass `Session.run()` own the later activity boundary.
 

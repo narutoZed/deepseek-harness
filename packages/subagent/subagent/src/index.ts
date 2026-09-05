@@ -55,6 +55,8 @@ import type {
   ResolvedSubagentStartRequest,
   SubagentCapabilities,
   SubagentProvider,
+  SubagentPrepareInfo,
+  SubagentPrepareToken,
   SubagentRun,
   SubagentRunEndInfo,
   SubagentRunInfo,
@@ -129,7 +131,7 @@ export type {
 } from './continuation.ts'
 export type * from './control-types.ts'
 export type { SubagentDescendantListEntry } from './list-children.ts'
-export type { SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
+export type { SubagentPrepareInfo, SubagentPrepareToken, SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
 export type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -150,6 +152,15 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'subagent/provider-removed'(name: string): void
+    /**
+     * Provider preparation began or finished. Scope-filtered dispatch keys the
+     * carrier by the delegating parent, so listeners observe their own delegations.
+     * A successful subagent/start is published before preparation finishes.
+     * @param info - preparation identity and phase, scoped to the delegating parent.
+     * @dshScopeScan unsupported
+     * @mode emit
+     */
+    'subagent/prepare'(this: Scoped<SubagentRuntime>, info: SubagentPrepareInfo): void
     /**
      * A provider established a published child. For in-process providers,
      * `ctx.agents.get(info.id)` resolves during this notification.
@@ -562,7 +573,13 @@ export class SubagentRuntime extends TypertRemoteService {
       ...request.label !== undefined ? { label: request.label } : {},
     })
     const resolved: ResolvedSubagentStartRequest = { ...request, descriptor }
-    return observeRun(this.emitLifecycle, name, request.parent, await provider.start(resolved))
+    const token = Symbol('subagent-prepare') as SubagentPrepareToken
+    this.emitLifecycle('subagent/prepare', { token, provider: name, phase: 'started' }, request.parent)
+    try {
+      return observeRun(this.emitLifecycle, name, request.parent, await provider.start(resolved))
+    } finally {
+      this.emitLifecycle('subagent/prepare', { token, provider: name, phase: 'finished' }, request.parent)
+    }
   }
 
   /**

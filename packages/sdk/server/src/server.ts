@@ -16,7 +16,8 @@ import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
+import type { SubagentPrepareInfo, SubagentRunEndInfo, SubagentRunInfo } from '@deepseek-ai/dsh-subagent'
+import { SdkSessionSettlement } from './session-settlement.ts'
 import type {
   AskUserQuestionAnswer,
   AskUserQuestionRequest,
@@ -33,6 +34,7 @@ import type {
   SessionEventNotification,
   SessionPromptParams,
   SessionSteerParams,
+  SessionSettledNotification,
   SessionPromptResult,
   SdkEncodedImageBlock,
   SubagentFinishedNotification,
@@ -92,6 +94,7 @@ function successStatus(reason: string, options: HarnessSdkJsonRpcServerOptions):
  * reinitialization is unsupported.
  */
 export class HarnessSdkJsonRpcServer {
+  private readonly settlement: SdkSessionSettlement
   private cwd = process.cwd()
   private provider = 'deepseek-official'
   private model = 'deepseek-official'
@@ -112,13 +115,22 @@ export class HarnessSdkJsonRpcServer {
     private readonly transport: JsonRpcTransportPeer,
     private readonly options: HarnessSdkJsonRpcServerOptions = {},
   ) {
+    this.settlement = new SdkSessionSettlement((sessionId) => {
+      const payload: SessionSettledNotification = { sessionId }
+      this.transport.notify('session.settled', payload)
+    })
+    const settlement = this.settlement
     const serverOptions = this.options
     this.disposers.push(ctx.on('session/event', (session, event) => {
       const payload: SessionEventNotification = { sessionId: String(session.id), event }
       this.transport.notify('session.event', payload)
+      if (event.type === 'agent/inbox/spliced' && event.data.target === 'next-turn') {
+        settlement.inbox(String(session.id), event.data.inserted.length, event.data.removedCount ?? 0)
+      }
     }))
     this.disposers.push(ctx.on('agent/status', ({ agent, status }) => {
       this.transport.notify('session.status', { sessionId: String(agent.session.id), status })
+      settlement.status(String(agent.session.id), status)
     }))
     this.disposers.push(ctx.on('agent/assistant-stream', ({ agent, frame }) => {
       const payload: SessionAssistantStreamNotification = { sessionId: String(agent.session.id), frame }
@@ -127,6 +139,7 @@ export class HarnessSdkJsonRpcServer {
     this.disposers.push(ctx.on('session/created', (session) => {
       const parentSession = session.header.parentSession
       if (parentSession === undefined) return
+      settlement.linkChild(String(session.id), String(parentSession))
       const payload: SubagentStartedNotification = {
         parentSessionId: String(parentSession),
         childSessionId: String(session.id),
@@ -134,12 +147,25 @@ export class HarnessSdkJsonRpcServer {
       }
       this.transport.notify('subagent.started', payload)
     }))
+    this.disposers.push(ctx.on('subagent/start', function (this: Scoped<SubagentRuntime>, info: SubagentRunInfo) {
+      const parentId = String(subagentParentOf(this).session.id)
+      if (info.local) settlement.linkChild(String(info.id), parentId)
+      settlement.startSubagent(String(info.runId), parentId)
+    }))
+    this.disposers.push(ctx.on('subagent/prepare', function (this: Scoped<SubagentRuntime>, info: SubagentPrepareInfo) {
+      if (info.phase === 'started') {
+        settlement.startSubagent(info.token, String(subagentParentOf(this).session.id))
+      } else settlement.endSubagent(info.token)
+    }))
     this.disposers.push(ctx.on('subagent/end', function (this: Scoped<SubagentRuntime>, info: SubagentRunEndInfo) {
       const parent = subagentParentOf(this)
       // This protocol reports only in-process child sessions. The service
       // snapshots the provider name and local flag through child disposal;
       // matching ids or parent lineage alone never establishes locality.
-      if (!info.local) return
+      if (!info.local) {
+        settlement.endSubagent(String(info.runId))
+        return
+      }
       const payload: SubagentFinishedNotification = {
         provider: info.provider,
         agentId: String(info.id),
@@ -150,6 +176,7 @@ export class HarnessSdkJsonRpcServer {
         ...(info.lastAssistantMessage === undefined ? {} : { lastAssistantMessage: info.lastAssistantMessage }),
       }
       transport.notify('subagent.finished', payload)
+      settlement.endSubagent(String(info.runId))
     }))
     this.disposers.push(ctx.on('user-questions/request', (request, next) => {
       const agent = request.agent
@@ -218,7 +245,10 @@ export class HarnessSdkJsonRpcServer {
     this.reasoningEffort = reasoningEffort
     this.maxTokens = params.maxTokens
     this.initialized = true
-    return { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } }
+    return {
+      serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' },
+      capabilities: { sessionTreeSettled: true },
+    }
   }
 
   /**
@@ -242,6 +272,7 @@ export class HarnessSdkJsonRpcServer {
       content,
       source: { kind: 'user', ...(params.requestId === undefined ? {} : { rpcId: params.requestId }) },
     })
+    this.settlement.begin(params.sessionId)
     rec.handle.agent.followup(message)
     return { messageId: message.id }
   }
@@ -308,6 +339,7 @@ export class HarnessSdkJsonRpcServer {
 
   private async performShutdown(): Promise<Record<string, never>> {
     this.shuttingDown = true
+    this.settlement.close()
     const pendingCreations = [...this.sessionCreations.values()]
     await Promise.allSettled(pendingCreations)
     this.sessionCreations.clear()

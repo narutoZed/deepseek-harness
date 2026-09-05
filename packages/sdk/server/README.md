@@ -13,6 +13,8 @@ The SDK host receives `interaction.request` when a root agent asks the user a qu
 
 `dsh-sdk-jsonrpc-server` serves the SDK wire protocol over stdio so out-of-process clients can drive harness agents: it opens one session per `sessionId`, queues user prompts, and streams every session event, agent status transition, live assistant stream frame, and subagent lifecycle update back to the client. Mount it as the `jsonrpc` plugin in a Loader composition; the surrounding tree supplies everything else — agents, model adapters, persistence, and tools. Stdout carries only JSON-RPC frames, so a deployment must not compose a stdout logger. It answers `shutdown` by disposing the root runtime and exiting 0; the app bin owns EOF and signal exits.
 
+`initialize` advertises `capabilities.sessionTreeSettled: true`. After an accepted prompt, the server emits `session.settled` once the root is idle, its next-turn inbox is empty, and native descendant preparation and run epochs have settled. The server observes native lifecycle events and retains local ancestry across child retirement; remote runs still count as work owned by their local parent. Raw `session.status` remains the root driver status. Settlement includes queued parent follow-up work, but does not assign a result to an individual prompt or replace shutdown disposal.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -134,7 +136,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 These limits define when the plugin needs special operational care. They are current package constraints, not a comparison with other serving approaches or a task backlog.
 
 - **The wire has no per-session close or prompt-cancel method** — SDK-created agents remain live until process shutdown.
-- **There is no per-prompt result** — `MessageId` identifies inbox admission only; clients that own an automation interval must define and observe that interval themselves.
+- **There is no per-prompt result** — `MessageId` identifies inbox admission only; `session.settled` observes a shared activity interval without assigning its output to one prompt.
 - **stdout purity is deployment-enforced** — a surrounding config can still load a stdout logger and corrupt the JSON-RPC channel; this plugin does not inspect or veto sibling loggers.
 - **Automatic adapter mounting is DeepSeek-specific** — `initialize` can reuse any pre-registered model adapter, but its only fallback mounts the DeepSeek adapter.
 
