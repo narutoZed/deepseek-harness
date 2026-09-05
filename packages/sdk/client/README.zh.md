@@ -7,6 +7,8 @@ kind: "package-library"
 
 [English](README.md) | 中文
 
+`HarnessClient.respondInteraction(interactionId, answers)` 回答 `interaction.request` 通知，不会启动新轮次。宿主负责展示问题；服务端在结束工具等待前校验完整的回答集合。
+
 ## 概述
 
 `dsh-sdk-client` 让 TypeScript 程序以子进程方式、通过 stdio JSON-RPC 驱动 DeepSeek Harness 运行时。使用 `DeepSeekHarness` 你可以启动运行时、打开会话、发送提示词，并收集最终响应以及事件与通知流；`HarnessClient` 提供对协议层的显式控制。它是 [Python SDK](../../../python/README.zh.md) 的设计孪生，共享同一个运行时对端与协议。启动说明是显式的——调用方可通过 `dshBin` 指定运行时可执行文件，省略时解析同版本 `@deepseek-ai/dsh` 包的 bin，参数由客户端构造——因此本客户端适合仓库近旁的 TypeScript 消费方，如 SDK subagent 后端和知道自己要启动哪个运行时的自动化。它是纯库：不在任何 Cordis 上下文注册，而且它启动的运行时是一个完整 harness，其组成由自己的 `cordis.yml` 决定。

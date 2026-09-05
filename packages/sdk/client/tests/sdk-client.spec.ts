@@ -63,6 +63,18 @@ async function tempDir(prefix: string): Promise<string> {
 }
 
 describe('DeepSeekHarness', () => {
+  it('answers SDK interactions through the typed client method', async () => {
+    const harness = harnessWith()
+    await expect(harness.client.respondInteraction('question-1', [
+      { id: 'task', selected: [], custom: 'continue' },
+    ])).resolves.toBe(true)
+  })
+
+  it('rejects malformed interaction acceptance replies', async () => {
+    const harness = harnessWith({ FAKE_MALFORMED_INTERACTION: '1' })
+    await expect(harness.client.respondInteraction('question-1', []))
+      .rejects.toThrow(SdkProtocolError)
+  })
   it('ignores notifications that precede the submitted message receipt', async () => {
     const notifications = [
       { method: 'session.status', params: { sessionId: 'owned', status: 'running' } },

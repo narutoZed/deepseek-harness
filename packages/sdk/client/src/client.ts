@@ -18,6 +18,7 @@ import {
   JsonRpcResponseError,
   type InitializeParams,
   type InitializeResult,
+  type InteractionRespondParams,
   type SessionPromptParams,
   type SdkPromptContentBlock,
 } from '@deepseek-ai/dsh-sdk-protocol'
@@ -295,6 +296,20 @@ export class HarnessClient {
       throw new SdkProtocolError(`session/prompt returned no message id: ${JSON.stringify(result)}`)
     }
     return result.messageId
+  }
+
+  /**
+   * Answer one pending user interaction without starting another agent turn.
+   * @param interactionId - identity from an interaction.request notification.
+   * @param answers - one answer per question id in the notification.
+   * @returns whether the runtime accepted the answers; malformed replies reject.
+   */
+  async respondInteraction(interactionId: string, answers: InteractionRespondParams['answers']): Promise<boolean> {
+    const result = await this.request('interaction/respond', { interactionId, answers })
+    if (!isRecord(result) || typeof result.accepted !== 'boolean') {
+      throw new SdkProtocolError('interaction/respond returned no acceptance flag')
+    }
+    return result.accepted
   }
 
   /**

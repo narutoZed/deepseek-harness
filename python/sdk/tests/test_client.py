@@ -1071,3 +1071,22 @@ def test_client_reports_missing_bundled_runtime_dependency(monkeypatch: pytest.M
 
     with pytest.raises(FileNotFoundError, match="Install deepseek-harness-runtime-bin"):
         HarnessClient(HarnessConfig(dsh_home="/explicit/home")).start()
+
+
+def test_respond_interaction_sends_question_identity_and_answers(tmp_path: Path) -> None:
+    script = tmp_path / "interaction_runtime.py"
+    script.write_text('''
+import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    if request["method"] == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {}}), flush=True)
+        break
+    assert request["method"] == "interaction/respond"
+    assert request["params"] == {"interactionId": "question-1", "answers": [{"id": "task", "selected": [], "custom": "Inspect the SDK"}]}
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"accepted": True}}), flush=True)
+''', encoding="utf-8")
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
+        assert client.respond_interaction("question-1", [
+            {"id": "task", "selected": [], "custom": "Inspect the SDK"},
+        ]) is True
