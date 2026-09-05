@@ -31,6 +31,8 @@ Mount this plugin when a runtime must serve SDK clients: add it to a `cordis.yml
 
 The plugin creates one agent per `sessionId` on first use. A registered model adapter wins the route; an unowned `deepseek-official` route mounts the DeepSeek adapter, and any other unowned provider fails initialization. The selected adapter resolves the exact model and optional reasoning effort before initialization succeeds.
 
+The first prompt to a persisted session id resumes its durable conversation after process replacement. Only the exact already-exists creation error selects resume; other creation failures propagate.
+
 ### Configuration
 
 | Field | Default | Meaning |

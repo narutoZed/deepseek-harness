@@ -294,3 +294,75 @@ describe('Python SDK dsh profile keyless smoke', () => {
     }
   }, 30_000)
 })
+
+describe('SDK durable session restart', () => {
+  it('keeps the first conversation when a replacement process prompts the same session', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-resume-'))
+    const requests: Record<string, unknown>[] = []
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        requests.push(JSON.parse(body) as Record<string, unknown>)
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.write('data: {"choices":[{"delta":{"role":"assistant","content":"answer"}}]}\n\n')
+        response.end('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
+      })
+    })
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      for (const prompt of ['first question', 'second question']) {
+        const child = execa(process.execPath, ['--import', 'tsx/esm', binScript, '--profile', 'sdk'], {
+          cwd: repoRoot,
+          env: {
+            DSH_HOME: join(root, '.dsh'), DSH_TELEMETRY_DISABLED: '1',
+            DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+          },
+          timeout: 35_000, killSignal: 'SIGKILL', reject: false,
+        })
+        const lines: string[] = []
+        let buffer = ''
+        let stderr = ''
+        child.stdout.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString('utf8')
+          const complete = buffer.split('\n')
+          buffer = complete.pop() ?? ''
+          lines.push(...complete)
+        })
+        child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
+        const send = (id: number, method: string, params?: object): void => {
+          child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
+        }
+        try {
+          send(1, 'initialize', { cwd: root, provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+          const initialized = await waitForLine(lines, value => value.id === 1, () => stderr)
+          expect(initialized.error, stderr).toBeUndefined()
+          expect(initialized).toHaveProperty('result')
+          send(2, 'session/prompt', { sessionId: 'durable', contentBlocks: [{ type: 'text', text: prompt }] })
+          expect(await waitForLine(lines, value => value.id === 2, () => stderr)).toHaveProperty('result.messageId')
+          await waitForLine(lines, value => value.method === 'session.status'
+            && (value.params as { status?: string })?.status === 'idle', () => stderr)
+          send(3, 'shutdown')
+          expect(await waitForLine(lines, value => value.id === 3, () => stderr)).toHaveProperty('result')
+          child.stdin.end()
+          const exit = await child
+          expect(exit.timedOut).toBe(false)
+          expect(exit.signal).toBeUndefined()
+          expect(exit.exitCode).toBe(0)
+        } finally {
+          child.kill('SIGKILL')
+          await child
+        }
+      }
+      expect(requests).toHaveLength(2)
+      expect(JSON.stringify(requests[1]?.messages)).toContain('first question')
+      expect(JSON.stringify(requests[1]?.messages)).toContain('second question')
+    } finally {
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
