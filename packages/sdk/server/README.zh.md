@@ -29,6 +29,11 @@ kind: "package-reference"
 
 当运行时必须服务 SDK 客户端时挂载本插件：把它加入组合了 agent 服务的 `cordis.yml`，启动运行时，客户端即可通过 stdio 连接。常用路径是显式的——插件需要 `agents` 服务；其余每个能力都来自外围插件树。
 
+<a id="running-session-steering"></a>
+### 运行中会话的引导
+
+服务端通过 `session/steer` 接受下一步输入，并在排队提示词上保留调用方身份。重试和空闲会话行为见[协议说明](../protocol/README.zh.md#running-session-steering)。
+
 ### 组装
 
 插件在首次使用时为每个 `sessionId` 创建一个 agent。已注册的模型适配器赢得路由；尚无适配器负责的 `deepseek-official` 路由会挂载 DeepSeek 适配器，任何其他尚无适配器负责的提供方都会导致初始化失败。初始化成功前，所选适配器会解析确切模型与可选推理强度。

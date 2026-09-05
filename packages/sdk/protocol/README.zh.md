@@ -29,6 +29,13 @@ kind: "package-library"
 
 当你构建或调试 SDK 协议端——服务插件、客户端库或说该协议的自定义工具——时使用本包。它为你提供一个在调用方持有的字节流上承载 JSON-RPC 2.0 的传输，以及每个 SDK 方法与通知的类型化结构。
 
+<a id="running-session-steering"></a>
+### 运行中会话的引导
+
+`session/steer` 为已经运行的会话接受 `{ sessionId, requestId, contentBlocks }`，并立即返回持久收件箱的 `messageId`，不等待完成。同一进程内，内容相同且已成功或正在处理的重试复用该回执；相同 id 配合不同内容会被拒绝。准入失败可以重试。会话不存在或空闲时会拒绝，而不是启动新轮次。
+
+`session/prompt` 接受用于关联的可选 `requestId`。两个操作均将其保留为 `source.rpcId`。这些身份不提供跨进程重试恢复。
+
 ### 分帧与传输
 
 在你拥有的字节流上，每个 `\n` 结尾的行承载一条 JSON-RPC 2.0 消息。同时带 `id` 与 `method` 的帧是请求，仅 `id` 是响应，仅 `method` 是通知；格式错误的行会被忽略。没有注册处理器的请求应答 `-32601`，处理器失败应答 `-32603`，错误响应会以 `JsonRpcResponseError` 拒绝挂起的请求，并保留协议中的 `code` 与可选 `data`。`start()` 挂接流监听器，`close()` 移除监听器并拒绝挂起请求，但不销毁流。

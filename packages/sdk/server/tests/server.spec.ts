@@ -11,7 +11,7 @@ import AgentRegistry, { type Agent, type AgentHandle } from '@deepseek-ai/dsh-ag
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
@@ -45,16 +45,21 @@ async function mockCompletionServer(beforeReply?: () => Promise<void>): Promise<
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = ''
     request.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') })
-    request.on('end', async () => {
+    request.on('end', () => {
       requests.push(JSON.parse(body))
       headers.push(request.headers)
-      await beforeReply?.()
-      response.writeHead(200, { 'content-type': 'text/event-stream' })
-      response.write('data: {"choices":[{"delta":{"role":"assistant","content":null,"reasoning_content":""}}]}\n\n')
-      response.write('data: {"choices":[{"delta":{"content":"done"}}]}\n\n')
-      response.write('data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}\n\n')
-      response.write('data: [DONE]\n\n')
-      response.end()
+      const send = (): void => {
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.write('data: {"choices":[{"delta":{"role":"assistant","content":null,"reasoning_content":""}}]}\n\n')
+        response.write('data: {"choices":[{"delta":{"content":"done"}}]}\n\n')
+        response.write('data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}\n\n')
+        response.write('data: [DONE]\n\n')
+        response.end()
+      }
+      if (beforeReply === undefined) send()
+      else void beforeReply().then(send, (error: unknown) => {
+        response.destroy(error instanceof Error ? error : new Error(String(error)))
+      })
     })
   })
   servers.push(server)
@@ -283,24 +288,20 @@ describe('HarnessSdkJsonRpcServer', () => {
     try {
       await server.initialize({ cwd: storageDir, provider: 'deepseek-official', model: 'dsagent-model' })
       await server.prompt({ sessionId: 'main', requestId: 'queued-first', contentBlocks: [{ type: 'text', text: 'first' }] })
-      expect(transport.notifications).toContainEqual(expect.objectContaining({
-        method: 'session.event', params: expect.objectContaining({ event: expect.objectContaining({
-          type: 'agent/inbox/spliced', data: expect.objectContaining({ target: 'next-turn', inserted: expect.arrayContaining([
-            expect.objectContaining({ source: { kind: 'user', rpcId: 'queued-first' } }),
-          ]) }),
-        }) }),
-      }))
+      const inserted = (target: 'next-step' | 'next-turn', rpcId: string, messageId?: string): boolean =>
+        transport.notifications.some((notification) => {
+          const event = notification.params?.event as SessionEvent | undefined
+          return notification.method === 'session.event' && event?.type === 'agent/inbox/spliced'
+            && event.data.target === target && event.data.inserted.some(message =>
+            message.source.kind === 'user' && 'rpcId' in message.source && message.source.rpcId === rpcId
+              && (messageId === undefined || message.id === messageId))
+        })
+      expect(inserted('next-turn', 'queued-first')).toBe(true)
       await vi.waitFor(() => { expect(llmServer.requests).toHaveLength(1) })
       const receipt = await server.handleRequest('session/steer', {
         sessionId: 'main', requestId: 'steer-real', contentBlocks: [{ type: 'text', text: 'steer-next-step' }],
       }) as { messageId: string }
-      expect(transport.notifications).toContainEqual(expect.objectContaining({
-        method: 'session.event', params: expect.objectContaining({ event: expect.objectContaining({
-          type: 'agent/inbox/spliced', data: expect.objectContaining({ target: 'next-step', inserted: expect.arrayContaining([
-            expect.objectContaining({ id: receipt.messageId, source: { kind: 'user', rpcId: 'steer-real' } }),
-          ]) }),
-        }) }),
-      }))
+      expect(inserted('next-step', 'steer-real', receipt.messageId)).toBe(true)
       gate.resolve(undefined)
       await vi.waitFor(() => { expect(llmServer.requests.length).toBeGreaterThan(1) })
       expect(JSON.stringify(llmServer.requests[1])).toContain('steer-next-step')

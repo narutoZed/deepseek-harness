@@ -34,6 +34,11 @@ print(result.final_response)
 
 `DeepSeekHarness` starts lazily and reuses its runtime until `close()` or context-manager exit. The initial profile handshake has an independent 30-second default bound through `initialize_timeout_seconds`; ordinary turns remain unbounded unless `request_timeout_seconds` is set. A timeout names the selected profile and includes retained runtime diagnostics. `cwd` is the agent workspace; `runtime_cwd` independently selects the subprocess working directory. Both become absolute before launch. `provider`, `model`, optional `reasoning_effort`, and optional positive `max_tokens` are sent during JSON-RPC initialization. `base_url` and `api_key` explicitly override `DEEPSEEK_BASE_URL` and `DEEPSEEK_API_KEY` in the child environment.
 
+<a id="running-session-steering"></a>
+## Running-session steering
+
+`client.session_steer(session_id, blocks, request_id=...)` returns the admitted inbox id for an active session. `session_prompt` and high-level `run` accept optional `request_id` for queued-input correlation. Steering requires the matching runtime version.
+
 ## Customize plugins
 
 Persistent customization belongs to a `dsh` profile. Initialize the shipped SDK profile and install an external bundle with the runtime wheel's `dsh` command:
@@ -72,9 +77,3 @@ The shipped `sdk-minimal` profile is a standalone explicit tree rather than an o
 The selected home stores profiles, plugins, and every profile-owned durable resource. The full `sdk` profile uses its credentials, settings, and session stores; `sdk-minimal` uses only its JSONL session store. Use a fresh home when those resources must be isolated, and a fresh session id for independent work. Reusing both a harness and session id continues the durable conversation and session-owned resources.
 
 See the [Python tutorial](../../docs/user/guide/python-sdk.md), [runnable example](examples/README.md), and [runtime wheel reference](../sdk-runtime/README.md).
-
-## Running-session steering
-
-`session/steer` accepts `{ sessionId, requestId, contentBlocks }` for an existing running session. It calls the core agent's `steer` operation, inserting input at the next step boundary, and returns the real inbox `messageId`. Identical retries reuse the receipt within the runtime process; reusing a request ID with different content is rejected. Idle or missing sessions are rejected rather than starting unrelated work. Python callers use `client.session_steer(session_id, blocks, request_id=...)`.
-
-`session/prompt` also accepts an optional `requestId` (Python `request_id`) so queued prompts can preserve caller identity in the logged user source. This is correlation, not a promise of cross-process idempotency. Both operations retain the identity as `source.rpcId`. Update the runtime binary together with SDK clients before enabling steering in a deployment.

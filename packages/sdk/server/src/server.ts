@@ -244,7 +244,7 @@ export class HarnessSdkJsonRpcServer {
    * @param params - Existing session, content and retry identity.
    * @returns The persisted inbox message identity, reused for identical retries.
    */
-  steer(params: SessionSteerParams): Promise<SessionPromptResult> {
+  steer(params: SessionSteerParams | undefined): Promise<SessionPromptResult> {
     if (!this.initialized || this.shuttingDown) throw new Error('SDK server is not active')
     if (typeof params?.sessionId !== 'string' || typeof params.requestId !== 'string' || params.requestId.length === 0
       || !Array.isArray(params.contentBlocks) || params.contentBlocks.length === 0) {
@@ -268,14 +268,19 @@ export class HarnessSdkJsonRpcServer {
   private async deliverSteer(params: SessionSteerParams): Promise<SessionPromptResult> {
     const rec = this.sessions.get(params.sessionId)
     if (rec === undefined) throw new Error('session/steer requires an existing session')
-    this.assertLiveAgent(rec, params.sessionId)
-    if (rec.handle.agent.status !== 'running') throw new Error('session/steer requires a running session')
+    this.assertRunningAgent(rec, params.sessionId)
     const content = await durablePromptContent(this.ctx, params.contentBlocks)
-    this.assertLiveAgent(rec, params.sessionId)
-    if (this.shuttingDown || rec.handle.agent.status !== 'running') throw new Error('session is no longer running')
+    this.assertRunningAgent(rec, params.sessionId)
     const message = createUserMessage({ content, source: { kind: 'user', rpcId: params.requestId } })
     rec.handle.agent.steer(message)
     return { messageId: message.id }
+  }
+
+  private assertRunningAgent(rec: SessionRecord, sessionId: string): void {
+    this.assertLiveAgent(rec, sessionId)
+    if (this.shuttingDown || rec.handle.agent.status !== 'running') {
+      throw new Error('session/steer requires a running session')
+    }
   }
 
   private assertLiveAgent(rec: SessionRecord, sessionId: string): void {

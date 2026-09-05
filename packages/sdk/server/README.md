@@ -29,6 +29,11 @@ The SDK host receives `interaction.request` when a root agent asks the user a qu
 
 Mount this plugin when a runtime must serve SDK clients: add it to a `cordis.yml` that composes the agent service, boot the runtime, and clients connect over stdio. The common path is explicit — the plugin needs the `agents` service; every other capability comes from the surrounding tree.
 
+<a id="running-session-steering"></a>
+### Running-session steering
+
+The server admits next-step input through `session/steer` and preserves caller identity on queued prompts. See the [protocol description](../protocol/README.md#running-session-steering) for retry and inactive-session behavior.
+
 ### Wiring
 
 The plugin creates one agent per `sessionId` on first use. A registered model adapter wins the route; an unowned `deepseek-official` route mounts the DeepSeek adapter, and any other unowned provider fails initialization. The selected adapter resolves the exact model and optional reasoning effort before initialization succeeds.
@@ -140,9 +145,3 @@ These limits define when the plugin needs special operational care. They are cur
 This Dev Note is working context for maintainers and is explicitly non-authoritative — shipped behavior and limits live in the sections above and in the code. The single-executable runtime distribution pairs this plugin with the packaged `jsonrpc-demo` bin; keep the shutdown/exit contract consistent with the app bin, which owns EOF and signal exits. No other unresolved design questions are recorded.
 
 </details>
-
-## Running-session steering
-
-`session/steer` accepts `{ sessionId, requestId, contentBlocks }` for an existing running session. It calls the core agent's `steer` operation, inserting input at the next step boundary, and returns the real inbox `messageId`. Identical retries reuse the receipt within the runtime process; reusing a request ID with different content is rejected. Idle or missing sessions are rejected rather than starting unrelated work. Python callers use `client.session_steer(session_id, blocks, request_id=...)`.
-
-`session/prompt` also accepts an optional `requestId` (Python `request_id`) so queued prompts can preserve caller identity in the logged user source. This is correlation, not a promise of cross-process idempotency. Both operations retain the identity as `source.rpcId`. Update the runtime binary together with SDK clients before enabling steering in a deployment.

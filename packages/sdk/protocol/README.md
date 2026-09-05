@@ -29,6 +29,13 @@ English | [中文](README.zh.md)
 
 Use this package when you build or debug an SDK wire end — the serving plugin, a client library, or custom tooling that speaks the SDK protocol. It gives you one transport for JSON-RPC 2.0 over caller-owned byte streams and the typed shapes for every SDK method and notification.
 
+<a id="running-session-steering"></a>
+### Running-session steering
+
+`session/steer` accepts `{ sessionId, requestId, contentBlocks }` for an existing running session and returns its durable inbox `messageId` without waiting for completion. Identical successful or in-flight retries reuse that receipt within the process; reusing an id with different content is rejected. Failed admissions are retryable. Missing or idle sessions reject rather than starting a turn.
+
+`session/prompt` accepts optional `requestId` for correlation. Both operations retain it as `source.rpcId`. These identities do not provide cross-process retry recovery.
+
 ### Framing and transport
 
 Wire one JSON-RPC 2.0 message per `\n`-terminated line over byte streams you own. A frame with both `id` and `method` is a request, `id` alone is a response, and `method` alone is a notification; malformed lines are ignored. Requests with no registered handler answer `-32601`, handler failures answer `-32603`, and error responses reject the pending request with `JsonRpcResponseError`, which preserves the wire `code` and optional `data`. `start()` attaches stream listeners and `close()` detaches them and rejects pending requests without destroying the streams.
@@ -126,9 +133,3 @@ These limits define what the protocol does not cover or promise. They are curren
 This Dev Note is working context for maintainers and is explicitly non-authoritative — shipped behavior and limits live in the sections above and in the code. This protocol's shapes are mirrored (not imported) by the Python SDK, so changing a method, payload, or the wire-stable `serverInfo.name` here requires updating the Python counterpart and the TypeScript client in the same change. No other unresolved design questions are recorded.
 
 </details>
-
-## Running-session steering
-
-`session/steer` accepts `{ sessionId, requestId, contentBlocks }` for an existing running session. It calls the core agent's `steer` operation, inserting input at the next step boundary, and returns the real inbox `messageId`. Identical retries reuse the receipt within the runtime process; reusing a request ID with different content is rejected. Idle or missing sessions are rejected rather than starting unrelated work. Python callers use `client.session_steer(session_id, blocks, request_id=...)`.
-
-`session/prompt` also accepts an optional `requestId` (Python `request_id`) so queued prompts can preserve caller identity in the logged user source. This is correlation, not a promise of cross-process idempotency. Both operations retain the identity as `source.rpcId`. Update the runtime binary together with SDK clients before enabling steering in a deployment.

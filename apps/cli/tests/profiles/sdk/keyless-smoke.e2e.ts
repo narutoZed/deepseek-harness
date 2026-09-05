@@ -423,3 +423,58 @@ describe('SDK human interaction', () => {
     }
   })
 })
+
+describe('SDK next-step steering', () => {
+  it('delivers identified steering while the first model response is still pending', async () => {
+    const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-steer-'))
+    const firstRequest = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const requests: Record<string, unknown>[] = []
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        requests.push(JSON.parse(body) as Record<string, unknown>)
+        const send = (): void => {
+          response.writeHead(200, { 'content-type': 'text/event-stream' })
+          response.write('data: {"choices":[{"delta":{"role":"assistant","content":"done"}}]}\n\n')
+          response.end('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
+        }
+        if (requests.length === 1) {
+          firstRequest.resolve(undefined)
+          void release.promise.then(send)
+        } else send()
+      })
+    })
+    let harness: InstanceType<typeof DeepSeekHarness> | undefined
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, '.dsh'), profile: 'sdk', env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      const run = harness.run('Start work', { sessionId: 'main', requestId: 'root-input' })
+      // A failed control assertion still closes the runtime and settles this run.
+      void run.catch(() => undefined)
+      await firstRequest.promise
+      const messageId = await harness.client.steer('main', [{ type: 'text', text: 'new direction' }], 'steer-input')
+      expect(messageId).toBeTypeOf('string')
+      expect(await harness.client.steer('main', [{ type: 'text', text: 'new direction' }], 'steer-input')).toBe(messageId)
+      release.resolve(undefined)
+      const result = await run
+      expect(requests).toHaveLength(2)
+      expect(JSON.stringify(requests[1]?.messages)).toContain('new direction')
+      expect(result.events.some(event => event.type === 'agent/inbox/spliced'
+        && event.data.inserted.some(message => message.id === messageId))).toBe(true)
+    } finally {
+      release.resolve(undefined)
+      await harness?.close()
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
