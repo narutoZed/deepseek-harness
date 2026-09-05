@@ -1111,3 +1111,48 @@ def test_session_steer_sends_identified_input_without_waiting_for_completion(mon
         "sessionId": "session-1", "requestId": "input-1",
         "contentBlocks": [{"type": "text", "text": "change direction"}],
     })]
+
+
+def test_live_assistant_frame_reaches_callback_before_durable_answer(tmp_path: Path) -> None:
+    observed = tmp_path / "chunk-observed"
+    script = tmp_path / "stream_runtime.py"
+    script.write_text('''
+import json, sys, time
+from pathlib import Path
+observed = Path(sys.argv[1])
+def notify(method, params):
+    print(json.dumps({"jsonrpc": "2.0", "method": method, "params": params}), flush=True)
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request["method"]
+    if method == "initialize":
+        result = {"serverInfo": {"name": "fake", "version": "test"}}
+    elif method == "session/prompt":
+        session = request["params"]["sessionId"]
+        notify("session.event", {"sessionId": session, "event": {"type": "agent/inbox/spliced", "data": {"inserted": [{"id": "message-1"}]}}})
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"messageId": "message-1"}}), flush=True)
+        notify("session.assistant_stream", {"sessionId": session, "frame": {"type": "chunk", "chunk": {"type": "text-delta", "text": "partial"}}})
+        deadline = time.monotonic() + 10
+        while not observed.exists():
+            if time.monotonic() >= deadline:
+                raise RuntimeError("host did not observe the live frame")
+            time.sleep(0.01)
+        notify("session.event", {"sessionId": session, "event": {"type": "assistant/message", "data": {"content": [{"type": "text", "text": "complete"}]}}})
+        notify("session.status", {"sessionId": session, "status": "idle"})
+        continue
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
+    if method == "shutdown":
+        break
+''', encoding="utf-8")
+
+    def on_notification(notification: Notification) -> None:
+        if notification.method == "session.assistant_stream":
+            assert notification.payload["frame"]["chunk"]["text"] == "partial"
+            observed.write_text("seen", encoding="utf-8")
+
+    with DeepSeekHarness(_launch_args=(sys.executable, str(script), str(observed))) as harness:
+        result = harness.run("work", on_notification=on_notification)
+    assert result.final_response == "complete"
+    assert observed.exists()

@@ -478,3 +478,56 @@ describe('SDK next-step steering', () => {
     }
   })
 })
+
+describe('SDK assistant streaming', () => {
+  it('publishes live text before the model response and durable message finish', async () => {
+    const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+    const { vi } = await import('vitest')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-stream-'))
+    const release = Promise.withResolvers<undefined>()
+    const modelServer = createServer((request, response) => {
+      request.resume()
+      request.on('end', () => {
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.write('data: {"choices":[{"delta":{"role":"assistant","content":"first"}}]}\n\n')
+        void release.promise.then(() => {
+          response.write('data: {"choices":[{"delta":{"content":" second"}}]}\n\n')
+          response.end('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
+        })
+      })
+    })
+    let harness: InstanceType<typeof DeepSeekHarness> | undefined
+    let run: ReturnType<InstanceType<typeof DeepSeekHarness>['run']> | undefined
+    let liveChunk: unknown
+    let durable = false
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, '.dsh'), profile: 'sdk', env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      run = harness.run('Stream a short answer', { sessionId: 'stream', onNotification: (notification) => {
+        if (notification.method === 'session.assistant_stream') {
+          const frame = notification.params.frame as { type?: string; chunk?: unknown }
+          if (frame.type === 'chunk') liveChunk = frame.chunk
+        }
+        if (notification.method === 'session.event'
+          && (notification.params.event as { type?: string }).type === 'assistant/message') durable = true
+      } })
+      void run.catch(() => undefined)
+      await vi.waitFor(() => { expect(liveChunk).toMatchObject({ type: 'text-delta', text: 'first' }) }, { timeout: 30_000 })
+      expect(durable).toBe(false)
+      release.resolve(undefined)
+      expect((await run).finalResponse).toBe('first second')
+      expect(durable).toBe(true)
+    } finally {
+      release.resolve(undefined)
+      await harness?.close()
+      await run?.catch(() => undefined)
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
