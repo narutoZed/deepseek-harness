@@ -70,6 +70,8 @@ export interface StdioConfig {
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
+  /** Trusted per-runtime metadata sent as tools/call params._meta. */
+  requestMeta?: Record<string, unknown>
 }
 
 /** Config for connecting to an MCP server over Streamable HTTP (SSE). */
@@ -92,6 +94,8 @@ export interface StreamableHttpConfig {
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
+  /** Trusted per-runtime metadata sent as tools/call params._meta. */
+  requestMeta?: Record<string, unknown>
 }
 
 /** Configuration for one stdio or Streamable HTTP MCP server. */
@@ -121,6 +125,7 @@ export const Config = z.union([
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
     failOnStartupError: z.boolean().default(false),
     reconnect: Reconnect,
+    requestMeta: z.dict(z.any()),
   }),
   z.object({
     transport: z.const('streamable-http'),
@@ -130,6 +135,7 @@ export const Config = z.union([
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
     failOnStartupError: z.boolean().default(false),
     reconnect: Reconnect,
+    requestMeta: z.dict(z.any()),
   }),
 ]) as unknown as z<ConfigInput, Config>
 

@@ -32,6 +32,7 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  requestMeta?: Record<string, unknown>
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -86,7 +87,9 @@ function callToolUncached(
   opts: ToolBridgeOptions,
 ) {
   return client.request(
-    { method: 'tools/call', params: { name: rawName, arguments: args } },
+    { method: 'tools/call', params: { name: rawName, arguments: args,
+      ...(opts.requestMeta === undefined ? {} : { _meta: opts.requestMeta }),
+    } },
     RawCallToolResultSchema,
     {
       signal: exec.signal,

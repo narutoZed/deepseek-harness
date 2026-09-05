@@ -210,3 +210,11 @@ This Dev Note is working context for maintainers: open design questions and dire
 - The pinned MCP SDK is still evolving; a breaking upstream change requires updating the bridge.
 
 </details>
+
+## Trusted request metadata
+
+Optional `config.requestMeta` is sent as `tools/call.params._meta` alongside the
+model-authored `arguments`. It does not change the tool schema or expose these
+fields as model arguments. The host supplies an invocation-scoped snapshot;
+recreate the runtime when that snapshot changes. Leave it unset to preserve
+ordinary MCP calls. Credentials belong to the transport URL/headers, not metadata.
