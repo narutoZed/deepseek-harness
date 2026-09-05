@@ -145,6 +145,7 @@ export class HarnessSdkJsonRpcServer {
     this.disposers.push(ctx.on('user-questions/request', (request, next) => {
       const agent = request.agent
       if (agent === undefined) return next()
+      if (request.signal?.aborted) return Promise.reject(new Error('interaction was aborted'))
       const interactionId = randomUUID()
       const sessionId = String(agent.session.id)
       return new Promise<AskUserQuestionAnswer>((resolve, reject) => {
@@ -309,6 +310,15 @@ export class HarnessSdkJsonRpcServer {
   private respondInteraction(params: InteractionRespondParams): InteractionRespondResult {
     const pending = this.pendingInteractions.get(params.interactionId)
     if (pending === undefined) throw new Error('interaction is not pending')
+    if (!Array.isArray(params.answers) || params.answers.some((answer: unknown) => {
+      if (answer === null || typeof answer !== 'object') return true
+      const value = answer as Record<string, unknown>
+      return typeof value.id !== 'string' || !Array.isArray(value.selected)
+        || value.selected.some(item => typeof item !== 'string')
+        || (value.custom !== undefined && typeof value.custom !== 'string')
+    })) {
+      throw new TypeError('interaction answers require an id, selected strings and optional custom text')
+    }
     const expected = new Set(pending.request.questions.map(question => question.id))
     if (params.answers.length !== expected.size
       || params.answers.some(answer => !expected.delete(answer.id))) {

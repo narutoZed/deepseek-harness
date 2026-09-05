@@ -8,6 +8,8 @@ Python subprocess SDK for driving DeepSeek Harness over newline-delimited JSON-R
 python -m pip install deepseek-harness-sdk
 ```
 
+`harness.client.respond_interaction(interaction_id, answers)` answers `interaction.request` notifications from an `on_notification` callback or a separate control thread. Each answer contains the question `id`, a `selected` list and optional `custom` text.
+
 ## Start a runtime
 
 The Python SDK has no separate application entrypoint. It launches the bundled `dsh` CLI with `--profile sdk`; the selected profile owns the JSON-RPC server, agent composition, credentials, persistence, tools, and shutdown behavior.

@@ -7,6 +7,8 @@ kind: "package-library"
 
 English | [中文](README.zh.md)
 
+`interaction.request` identifies a pending question batch with `sessionId`, `interactionId` and `questions`. `interaction/respond` sends that interaction id and answers with question `id`, `selected` strings and optional `custom` text; success returns `{ accepted: true }`.
+
 ## Summary
 
 `dsh-sdk-protocol` lets a DeepSeek Harness runtime and its SDK clients exchange JSON-RPC 2.0 messages over newline-delimited byte streams: one transport class plus the named request, result, and notification types both wire ends speak. The serving side is the [`dsh-sdk-jsonrpc-server`](../server/README.md) plugin; the clients are the TypeScript [`dsh-sdk-client`](../client/README.md) and the [Python SDK](../../../python/README.md), which mirrors these shapes without importing them. Use this package when you implement or debug a wire end: framing rules, method names, payload types, and error semantics all live here. It is a pure library — no plugin, no configuration, no registrations.

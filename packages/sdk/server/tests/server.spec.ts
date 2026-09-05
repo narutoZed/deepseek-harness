@@ -208,6 +208,13 @@ describe('HarnessSdkJsonRpcServer', () => {
       expect(interactionId).toBeTypeOf('string')
 
       await expect(server.handleRequest('interaction/respond', {
+        interactionId, answers: [{ id: 'task', selected: 'not-an-array' }],
+      })).rejects.toThrow('selected strings')
+      await expect(server.handleRequest('interaction/respond', {
+        interactionId, answers: [{ id: 'other', selected: [] }],
+      })).rejects.toThrow('exactly once')
+
+      await expect(server.handleRequest('interaction/respond', {
         interactionId,
         answers: [{ id: 'task', selected: [], custom: 'Build the feature' }],
       })).resolves.toEqual({ accepted: true })

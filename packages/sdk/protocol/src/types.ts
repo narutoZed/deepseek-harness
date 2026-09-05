@@ -103,6 +103,7 @@ export interface SubagentFinishedNotification {
   lastAssistantMessage?: ContentBlock[]
 }
 
+/** One question presented by an SDK host to its user. */
 export interface SdkUserQuestion {
   id: string
   question: string
@@ -112,17 +113,20 @@ export interface SdkUserQuestion {
   multiSelect?: boolean
 }
 
+/** A pending user question owned by the identified session. */
 export interface InteractionRequestNotification {
   sessionId: string
   interactionId: string
   questions: SdkUserQuestion[]
 }
 
+/** Answers keyed by the question ids in an interaction request. */
 export interface InteractionRespondParams {
   interactionId: string
   answers: { id: string; selected: string[]; custom?: string }[]
 }
 
+/** Acceptance of a response to a pending interaction. */
 export interface InteractionRespondResult {
   accepted: true
 }

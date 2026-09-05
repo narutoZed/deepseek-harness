@@ -227,6 +227,11 @@ reader.on('line', (line) => {
   if (frame.method === undefined || frame.id === undefined) return
   const respond = (result: object): void => { write({ jsonrpc: '2.0', id: frame.id, result }) }
   switch (frame.method) {
+    case 'interaction/respond':
+      respond(env.FAKE_MALFORMED_INTERACTION === undefined
+        ? { accepted: frame.params?.interactionId === 'question-1' && Array.isArray(frame.params.answers) }
+        : { accepted: 'yes' })
+      return
     case 'initialize':
       if (env.FAKE_RECORD_INIT !== undefined) appendFileSync(env.FAKE_RECORD_INIT, `${JSON.stringify(frame.params)}\n`)
       if (env.FAKE_HANG_INIT !== undefined) return

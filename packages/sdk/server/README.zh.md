@@ -7,6 +7,8 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
+根 agent 向用户提问时，SDK 宿主会收到 `interaction.request`。`interaction/respond` 接受每个问题 id 对应的一条回答，并继续同一个等待中的工具。无效回答保留等待状态；中止或 SDK 关闭会拒绝提问并清除等待状态。这一机制传输用户问题，不传输权限审批请求。
+
 ## 概述
 
 `dsh-sdk-jsonrpc-server` 通过 stdio 服务 SDK 协议格式，使进程外客户端能够驱动 harness agent（智能体）：它为每个 `sessionId` 打开一个会话、把用户提示词排入队列，并把每个会话事件与 agent 状态转换实时流回客户端。把它作为 `jsonrpc` 插件挂载到 Loader 组合中；外围插件树提供其余一切——agent、模型适配器、持久化与工具。Stdout 只承载 JSON-RPC 帧，因此部署不得组合 stdout logger。它通过 dispose（资源释放）根运行时并以 0 退出应答 `shutdown`；EOF 与信号退出归 app bin 负责。

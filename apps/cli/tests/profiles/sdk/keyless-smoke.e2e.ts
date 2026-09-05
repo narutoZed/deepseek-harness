@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -361,6 +361,63 @@ describe('SDK durable session restart', () => {
       expect(JSON.stringify(requests[1]?.messages)).toContain('first question')
       expect(JSON.stringify(requests[1]?.messages)).toContain('second question')
     } finally {
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('SDK human interaction', () => {
+  it('continues the real ask_user_question tool after a typed SDK answer', async () => {
+    const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-interaction-'))
+    const patch = join(root, 'questions.patch.yml')
+    await writeFile(patch, JSON.stringify([{ insert: [{
+      id: 'sdk-question-test-tool',
+      name: join(repoRoot, 'packages/interaction/tool-ask-user/lib/index.js'),
+    }] }]))
+    const requests: Record<string, unknown>[] = []
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        requests.push(JSON.parse(body) as Record<string, unknown>)
+        const first = requests.length === 1
+        const delta = first ? { tool_calls: [{ index: 0, id: 'question-call', type: 'function', function: {
+          name: 'ask_user_question', arguments: JSON.stringify({ questions: [{ id: 'task', question: 'Which task?' }] }),
+        } }] } : { content: 'The selected task is recorded.' }
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.write(`data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant' } }] })}\n\n`)
+        response.write(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`)
+        response.end(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: first ? 'tool_calls' : 'stop' }] })}\n\ndata: [DONE]\n\n`)
+      })
+    })
+    let harness: InstanceType<typeof DeepSeekHarness> | undefined
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, '.dsh'), profile: 'sdk', patches: [patch], env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      const client = harness.client
+      const responses: Promise<boolean>[] = []
+      const result = await harness.run('Ask me which task to do', { sessionId: 'questions', onNotification: (notification) => {
+        if (notification.method === 'interaction.request') {
+          const interactionId = notification.params.interactionId
+          if (typeof interactionId !== 'string') throw new Error('interaction has no id')
+          responses.push(client.respondInteraction(interactionId, [
+            { id: 'task', selected: [], custom: 'Inspect the SDK' },
+          ]))
+        }
+      } })
+      expect(await Promise.all(responses), JSON.stringify(result.events.filter(event => event.type === 'tool/result'))).toEqual([true])
+      expect(result.finalResponse).toBe('The selected task is recorded.')
+      expect(JSON.stringify(requests[1]?.messages)).toContain('Inspect the SDK')
+    } finally {
+      await harness?.close()
       await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
       await rm(root, { recursive: true, force: true })
     }

@@ -7,6 +7,8 @@ kind: "package-library"
 
 [English](README.md) | 中文
 
+`interaction.request` 用 `sessionId`、`interactionId` 和 `questions` 标识一批等待回答的问题。`interaction/respond` 发送该交互 id，以及包含问题 `id`、`selected` 字符串数组和可选 `custom` 文本的回答；成功返回 `{ accepted: true }`。
+
 ## 概述
 
 `dsh-sdk-protocol` 让 DeepSeek Harness 运行时与其 SDK 客户端通过按换行分帧的字节流交换 JSON-RPC 2.0 消息：一个传输类，加上协议两端共同使用的具名请求、结果与通知类型。服务端是 [`dsh-sdk-jsonrpc-server`](../server/README.zh.md) 插件；客户端是 TypeScript 的 [`dsh-sdk-client`](../client/README.zh.md) 与 [Python SDK](../../../python/README.zh.md)（后者复现这些结构但不导入它们）。当你实现或调试协议某一端时使用本包：分帧规则、方法名、载荷类型与错误语义都在这里。它是纯库——无插件、无配置、无注册。

@@ -8,6 +8,8 @@
 python -m pip install deepseek-harness-sdk
 ```
 
+`harness.client.respond_interaction(interaction_id, answers)` 可以在 `on_notification` 回调或独立控制线程中回答 `interaction.request` 通知。每条回答包含问题 `id`、`selected` 列表和可选的 `custom` 文本。
+
 ## 启动运行时
 
 Python SDK 没有独立的应用入口。它以 `--profile sdk` 启动内置的 `dsh` CLI；所选 profile 负责 JSON-RPC 服务器、agent 组合、凭据、持久化、工具和关闭流程。
