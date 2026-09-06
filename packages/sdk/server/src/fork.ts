@@ -17,12 +17,25 @@ function walk(value: unknown, visit: (value: Record<string, unknown>) => void): 
   for (const item of Object.values(object)) walk(item, visit)
 }
 
+/**
+ * Enforce the serialized snapshot byte budget at the wire boundary.
+ * @param value - snapshot data to measure.
+ * @param maxBytes - maximum permitted serialized bytes.
+ */
 export function assertForkBudget(value: unknown, maxBytes: number): void {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new TypeError('maxBytes must be a positive safe integer')
   if (Buffer.byteLength(JSON.stringify(value)) > maxBytes) throw new Error('session fork exceeds maxBytes')
 }
 
-/** Export the same completed-turn prefix that the Web fork action uses. */
+/**
+ * Export the same completed-turn prefix that the Web fork action uses.
+ * @param ctx - runtime owning persistence and attachments.
+ * @param session - source header and complete event snapshot.
+ * @param turn - completed turn number at the selected boundary.
+ * @param maxBytes - maximum serialized snapshot size.
+ * @param endedAt - optional exact end-event timestamp.
+ * @returns native event seed plus referenced attachment bytes.
+ */
 export async function exportFork(ctx: Context, session: Pick<Session, 'id' | 'header' | 'snapshotEvents'>, turn: number, maxBytes: number, endedAt?: number): Promise<SessionForkSnapshot> {
   if (!Number.isSafeInteger(turn) || turn < 1) throw new TypeError('turn must be a positive safe integer')
   const all = session.snapshotEvents()
@@ -72,7 +85,13 @@ export async function exportFork(ctx: Context, session: Pick<Session, 'id' | 'he
   return result
 }
 
-/** Copy referenced bytes through the attachment capability before publishing seeded history. */
+/**
+ * Store portable attachment bytes and rewrite the imported native seed.
+ * @param ctx - destination runtime and attachment store.
+ * @param snapshot - bounded portable snapshot from the trusted host.
+ * @param maxBytes - maximum accepted serialized snapshot size.
+ * @returns native events with destination-owned attachment references.
+ */
 export async function importFork(ctx: Context, snapshot: SessionForkSnapshot, maxBytes: number): Promise<SessionEvent[]> {
   assertForkBudget(snapshot, maxBytes)
   if (!Array.isArray(snapshot.events) || !Array.isArray(snapshot.resources)

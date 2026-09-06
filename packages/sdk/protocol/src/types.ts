@@ -66,6 +66,7 @@ export interface SessionForkSnapshot {
   resources: SdkForkResource[]
 }
 
+/** Select a completed turn prefix with a bounded export size. */
 export interface SessionExportParams {
   sessionId: string
   turn: number
@@ -73,12 +74,14 @@ export interface SessionExportParams {
   maxBytes: number
 }
 
+/** Import a portable seed into a caller-authorized destination session. */
 export interface SessionForkParams {
   sessionId: string
   snapshot: SessionForkSnapshot
   maxBytes: number
 }
 
+/** Destination identity and constructor events returned after a fork. */
 export interface SessionForkResult {
   sessionId: string
   events: SessionEvent[]

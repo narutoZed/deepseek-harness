@@ -1444,6 +1444,8 @@ export interface StdioConfig {
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
+  /** Trusted per-runtime metadata sent as tools/call params._meta. */
+  requestMeta?: Record<string, unknown>
 }
 
 /** Config for connecting to an MCP server over Streamable HTTP (SSE). */
@@ -1466,6 +1468,8 @@ export interface StreamableHttpConfig {
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
+  /** Trusted per-runtime metadata sent as tools/call params._meta. */
+  requestMeta?: Record<string, unknown>
 }
 
 /** Automatic reconnect policy for one MCP server connection. */
@@ -1481,7 +1485,7 @@ export interface ReconnectConfig {
 }
 ```
 
-Source: [`packages/mcp/mcp-client/src/index.ts:98`](../packages/mcp/mcp-client/src/index.ts)
+Source: [`packages/mcp/mcp-client/src/index.ts:102`](../packages/mcp/mcp-client/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
