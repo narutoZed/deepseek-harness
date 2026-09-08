@@ -94,13 +94,11 @@ The `sandbox:policy` contribution states the mode's capability-neutral file-effe
 <a id="further-exploration"></a>
 ## Further Exploration
 
-Start with the subsystem reference for the shared vocabulary, then the seam contract, the cross-family decision, and the model-context decision.
+Start with the subsystem reference for the shared vocabulary, then the seam contract and the cross-family decision.
 
 - [Process sandbox subsystem](../../../docs/subsystems/sandbox.md) — modes, per-call policy, and enforcement semantics.
 - [Sandbox seam package](../sandbox/README.md) — the confinement contract every enforcing capability implements.
 - [Cross-family file sandbox decision](../../../.agents/notes/implemented/feature/2026-07-14-cross-family-fs-sandbox.md) — why one shared policy home exists.
-- [Current sandbox policy context decision](../../../.agents/notes/implemented/feature/2026-07-30-current-sandbox-policy-context.md) — how the policy reaches the model before each request.
-- [Capability-neutral policy context decision](../../../.agents/notes/implemented/simplification/2026-07-31-capability-neutral-sandbox-policy-context.md) — why the contribution names no mounted capabilities.
 
 -----
 
@@ -116,19 +114,19 @@ One `sandbox:policy` contribution in the current runtime-context snapshot for ev
 ##### Read-only
 
 ```markdown
-Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.
+Current file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.
 ```
 
 ##### Workspace-write
 
 ```markdown
-Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: "<workspace root>". Some platform temporary areas may also be writable.
+Current file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: "<workspace root>".
 ```
 
 ##### Danger-full-access
 
 ```markdown
-Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.
+Current file policy: danger-full-access. The file sandbox does not restrict file modifications by available operations.
 ```
 
 #### Token effect

@@ -19,7 +19,7 @@ async function harness(adapter: MockAdapter, persona = '') {
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
-  await ctx.plugin(SystemPrompt, { persona })
+  await ctx.plugin(SystemPrompt, { personaPrefix: persona })
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
@@ -556,7 +556,7 @@ describe('agent loop', () => {
 
     expect(adapter.requests).toHaveLength(0) // the request was never sent
     expect(errors.map(error => error.message)).toEqual([
-      'prompt variable "{{cwd}}" has no value for this assembly (section "deployment:persona")',
+      'prompt variable "{{cwd}}" has no value for this assembly (section "deployment:persona-prefix")',
     ])
     const turnEnd = agent.session.snapshotEvents().find(e => e.type === 'turn/end')
     expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason.kind).toBe('error')
@@ -647,7 +647,7 @@ describe('agent loop', () => {
     expect(contextEvents()).toHaveLength(1)
     expect(contextEvents()[0]?.data.content).toEqual([{
       type: 'text',
-      text: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nMode: read-only.',
+      text: '权限：\n\nMode: read-only.',
     }])
 
     send(agent, 'unchanged')
@@ -792,7 +792,7 @@ describe('agent loop', () => {
     expect(runtimeContexts).toHaveLength(2)
     expect(runtimeContexts[1]?.data.content).toEqual([{
       type: 'text',
-      text: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nMode: read-only.',
+      text: '权限：\n\nMode: read-only.',
     }])
   })
 

@@ -349,7 +349,7 @@ export class HarnessSdkJsonRpcServer {
     const id = brandString<SessionId>(params.sessionId)
     const handle = await persistence.open(id, 'read')
     try {
-      const events = await handle.read(SessionLogOffset(0))
+      const { events } = await handle.read(SessionLogOffset(0))
       return await exportFork(
         this.ctx, { id, header: handle.header, snapshotEvents: () => events },
         params.turn, params.maxBytes, params.endedAt,

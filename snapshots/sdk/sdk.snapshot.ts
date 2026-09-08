@@ -118,6 +118,9 @@ interface SdkAssertions {
 }
 
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
+  'subagent-continuable': {
+    environment: { DSH_SNAPSHOT_HUMAN_STEER: '1' },
+  },
   'subagent-dsh-sdk-diagnostic': {
     environment: { DSH_TEST_CHILD_PATCH: dshSdkDiagnosticChildPatch },
   },
@@ -127,7 +130,7 @@ const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
     expectedSystem: MINIMAL_SYSTEM_PROMPT,
     expectedToolDescriptions: { bash: MINIMAL_BASH_DESCRIPTION },
     runtimeContext: {
-      includes: ['Current DSH file policy: danger-full-access', 'Approval prompts are disabled in this session'],
+      includes: ['Current file policy: danger-full-access', 'Approval prompts are disabled in this session'],
       excludes: ['workspace-write'],
     },
   },
@@ -336,19 +339,37 @@ function normalizeNotifications(notifications: readonly HarnessNotification[], c
   const events = notifications
     .filter(n => n.method === 'session.event')
     .map(n => n.params.event as Record<string, unknown>)
+  const typedFeedback = events.some(event => event.type === 'feedback/message-put')
+  const eventLog = events.map(event => JSON.stringify(event)).join('\n') + '\n'
+  const typedLog = typedFeedback
+    ? redactSessionSnapshotIds([JSON.stringify({ type: 'session', id: ctx.sessionIds[0] }) + '\n' + eventLog])[0]!.split('\n').slice(1).join('\n')
+    : eventLog
   const normalizedEvents = events.length === 0
     ? []
     : scrubRequestHeaders(normalizeSessionLog(
-      normalizeSessionFormatProvenance(`${events.map(event => JSON.stringify(event)).join('\n')}\n`),
+      normalizeSessionFormatProvenance(typedLog),
       ctx,
+      typedFeedback ? { identityMode: 'preserve' } : {},
     )).trimEnd().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
   let eventIndex = 0
   const records = notifications.map((notification) => {
+    if (notification.method === 'session.assistant_stream') {
+      const frame = notification.params.frame as Record<string, unknown>
+      // Wall-clock timestamps use the same zero baseline as durable events;
+      // frame order, revisions, indexes, and payloads remain snapshot-visible.
+      return { method: notification.method, params: {
+        ...notification.params, frame: { ...frame, ...('time' in frame ? { time: 0 } : {}) },
+      } }
+    }
     if (notification.method !== 'session.event') return { method: notification.method, params: notification.params }
     const event = normalizedEvents[eventIndex++]
     return { method: notification.method, params: { ...notification.params, event } }
   })
-  return normalizeStdout(`${records.map(record => JSON.stringify(record)).join('\n')}\n`, ctx)
+  let output = records.map(record => JSON.stringify(record)).join('\n') + '\n'
+  if (typedFeedback) {
+    for (const [index, id] of ctx.sessionIds.entries()) output = output.replaceAll(id, '{{session:' + (index + 1) + '}}')
+  }
+  return normalizeStdout(output, ctx, typedFeedback ? { identityMode: 'preserve' } : {})
 }
 
 /** Normalize the owned-run projection. */
@@ -597,6 +618,12 @@ async function runScenario(scenario: CorpusScenario): Promise<{
           },
         })
         results.push(result)
+        if (scenario.manifest.environment?.DSH_SNAPSHOT_FEEDBACK === '1') {
+          const feedback = result.events.filter(event => event.type.startsWith('feedback/'))
+          expect(feedback.map(event => event.type)).toEqual([
+            'feedback/record', 'feedback/message-put', 'feedback/message-put', 'feedback/message-delete',
+          ])
+        }
         await waitForRootEvent(
           subscription,
           sessionId,
