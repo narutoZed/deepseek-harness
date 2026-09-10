@@ -13,10 +13,6 @@ English | [中文](README.zh.md)
 
 `dsh-sdk-protocol` lets a DeepSeek Harness runtime and its SDK clients exchange JSON-RPC 2.0 messages over newline-delimited byte streams: one transport class plus the named request, result, and notification types both wire ends speak. The serving side is the [`dsh-sdk-jsonrpc-server`](../server/README.md) plugin; the clients are the TypeScript [`dsh-sdk-client`](../client/README.md) and the [Python SDK](../../../python/README.md), which mirrors these shapes without importing them. Use this package when you implement or debug a wire end: framing rules, method names, payload types, and error semantics all live here. It is a pure library — no plugin, no configuration, no registrations.
 
-`InitializeResult.capabilities.sessionTreeSettled` optionally advertises support for the additive `session.settled` notification with `{ sessionId }`. It ends an accepted root activity interval after root idle, an empty next-turn inbox, and native descendant preparation/run settlement. Clients must negotiate this capability before waiting for the marker; raw `session.status` retains its existing meaning.
-
-`session/export` and `session/fork` transfer a bounded completed-turn seed between trusted SDK runtimes. The snapshot contains source identity, durable events and attachment bytes. Fork results contain the destination identity and constructor history for a public projection.
-
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -32,6 +28,10 @@ English | [中文](README.zh.md)
 ## Use this package
 
 Use this package when you build or debug an SDK wire end — the serving plugin, a client library, or custom tooling that speaks the SDK protocol. It gives you one transport for JSON-RPC 2.0 over caller-owned byte streams and the typed shapes for every SDK method and notification.
+
+`InitializeResult.capabilities.sessionTreeSettled` optionally advertises support for the additive `session.settled` notification with `{ sessionId }`. It ends an accepted root activity interval after root idle, an empty next-turn inbox, and native descendant preparation/run settlement. Clients must negotiate this capability before waiting for the marker; raw `session.status` retains its existing meaning.
+
+`session/export` and `session/fork` transfer a bounded completed-turn seed between trusted SDK runtimes. The snapshot contains source identity, durable events and attachment bytes. Fork results contain the destination identity and constructor history for a public projection.
 
 `subagent.started` includes optional `label`, `mode` and subagent `provider` from the first compatible durable descriptor in the child’s own, non-inherited events. Constructor-seeded descriptors need not produce live `session.event` notifications. Missing, unsupported or malformed descriptors leave those display fields absent while preserving parent/child identity. Persona, tool filters and task prompts are not copied into this notification. A foreground descriptor appended after creation remains available through its structured `session.event`; creation metadata does not predict future events.
 

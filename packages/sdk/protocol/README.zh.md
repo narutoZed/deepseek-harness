@@ -13,10 +13,6 @@ kind: "package-library"
 
 `dsh-sdk-protocol` 让 DeepSeek Harness 运行时与其 SDK 客户端通过按换行分帧的字节流交换 JSON-RPC 2.0 消息：一个传输类，加上协议两端共同使用的具名请求、结果与通知类型。服务端是 [`dsh-sdk-jsonrpc-server`](../server/README.zh.md) 插件；客户端是 TypeScript 的 [`dsh-sdk-client`](../client/README.zh.md) 与 [Python SDK](../../../python/README.zh.md)（后者复现这些结构但不导入它们）。当你实现或调试协议某一端时使用本包：分帧规则、方法名、载荷类型与错误语义都在这里。它是纯库——无插件、无配置、无注册。
 
-`InitializeResult.capabilities.sessionTreeSettled` 可选声明对新增 `session.settled` 通知的支持，载荷为 `{ sessionId }`。根 agent 空闲、next-turn inbox 为空且原生后代的准备和运行结束后，该通知结束已接受的根活动区间。客户端必须协商此能力后再等待该标记；原始 `session.status` 保留既有含义。
-
-`session/export` 和 `session/fork` 在可信 SDK 运行时之间传递有大小限制的已完成轮次种子。快照包含源身份、持久事件和附件字节。Fork 结果包含目标身份和构造历史，供公开投影使用。
-
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -32,6 +28,10 @@ kind: "package-library"
 ## 使用本包
 
 当你构建或调试 SDK 协议端——服务插件、客户端库或说该协议的自定义工具——时使用本包。它为你提供一个在调用方持有的字节流上承载 JSON-RPC 2.0 的传输，以及每个 SDK 方法与通知的类型化结构。
+
+`InitializeResult.capabilities.sessionTreeSettled` 可选声明对新增 `session.settled` 通知的支持，载荷为 `{ sessionId }`。根 agent 空闲、next-turn inbox 为空且原生后代的准备和运行结束后，该通知结束已接受的根活动区间。客户端必须协商此能力后再等待该标记；原始 `session.status` 保留既有含义。
+
+`session/export` 和 `session/fork` 在可信 SDK 运行时之间传递有大小限制的已完成轮次种子。快照包含源身份、持久事件和附件字节。Fork 结果包含目标身份和构造历史，供公开投影使用。
 
 `subagent.started` 从子会话自身非继承事件的首个兼容持久描述符中提供可选的 `label`、`mode` 和子代理 `provider`。构造期播种的描述符不一定产生实时 `session.event` 通知。描述符缺失、不受支持或损坏时，这些展示字段会省略，但父子身份仍会保留。此通知不复制人格提示、工具过滤器或任务提示词。 创建后才追加的前台描述符仍可通过结构化的 `session.event` 获取；创建元数据不会预测未来事件。
 

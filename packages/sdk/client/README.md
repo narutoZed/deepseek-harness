@@ -11,9 +11,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-sdk-client` lets TypeScript programs drive a DeepSeek Harness runtime as a subprocess over stdio JSON-RPC. With `DeepSeekHarness` you can spawn the runtime, open sessions, send prompts, and collect the final response plus the event and notification streams; `HarnessClient` gives explicit control over the protocol layer. It is the design twin of the [Python SDK](../../../python/README.md), which shares the same runtime peer and protocol. The launch spec is explicit — callers may name the runtime executable via `dshBin`, omitted resolves the same-version `@deepseek-ai/dsh` package's bin, and the client constructs the arguments — so this client suits repository-adjacent TypeScript consumers such as the SDK subagent backend and automation that know which runtime they are launching. It is a pure library: it registers nothing on a Cordis context, and the runtime it spawns is a complete harness whose composition its own `cordis.yml` decides.
-
-With a runtime advertising `capabilities.sessionTreeSettled`, `run()` defaults to collecting through `session.settled`: the root is idle, its next-turn inbox is empty, and native descendant preparation and run epochs have settled. Parent follow-up turns are included. Set `waitForSubagents: false` to stop at the first root idle; older runtimes without this capability retain that behavior. This is an activity boundary, not a per-prompt result or a guarantee that every resource has been disposed; `close()` still owns teardown.
+`dsh-sdk-client` lets TypeScript programs start and drive a complete DeepSeek Harness runtime over stdio JSON-RPC. Use `DeepSeekHarness` to open sessions, send text or image prompts, collect event and notification streams, and obtain the last committed assistant response when the runtime becomes idle; use `HarnessClient` for direct protocol requests and subscriptions. Callers may provide `dshBin`; otherwise the client resolves the same-version `@deepseek-ai/dsh` executable. The client owns the subprocess across runs, exposes typed transport and protocol failures, and reaps it on `close()` or `await using`. It is suitable when the caller can choose the runtime profile and launch settings.
 
 ## Table of Contents
 
@@ -30,6 +28,8 @@ With a runtime advertising `capabilities.sessionTreeSettled`, `run()` defaults t
 ## Use this package
 
 Use this client when TypeScript code must drive a complete Harness runtime from another process and you can name the runtime executable explicitly. The common path is minimal: construct a `DeepSeekHarness` with a launch spec, run prompts, and close it so the child process is always reaped.
+
+With a runtime advertising `capabilities.sessionTreeSettled`, `run()` defaults to collecting through `session.settled`: the root is idle, its next-turn inbox is empty, and native descendant preparation and run epochs have settled. Parent follow-up turns are included. Set `waitForSubagents: false` to stop at the first root idle; older runtimes without this capability retain that behavior. This is an activity boundary, not a per-prompt result or a guarantee that every resource has been disposed; `close()` still owns teardown.
 
 <a id="running-session-steering"></a>
 ### Running-session steering

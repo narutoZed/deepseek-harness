@@ -9,9 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-subagent` is the service behind child-agent delegation: an agent hands a task to a named child, collects the finished result, and — for continuable children — keeps sending follow-up work across turns. Multiple providers coexist under one contract, so a single composition can offer in-process children, out-of-process ACP or SDK children, and real Codex or Claude Code children side by side. Children come in two shapes: one-shot runs that settle with a single result, and continuable children whose durable session accepts later messages and can be interrupted. The same service answers discovery questions — which children exist, their mode, activity, and lineage — without loading or resuming them. Mount it with at least one provider backend and a delegation tool; the backends and the model-facing tools live in sibling packages.
-
-`subagent/prepare` observes asynchronous one-shot provider startup in the delegating parent scope. Its `started` and `finished` phases share a process-local symbol token that is never serialized. Successful preparation publishes `subagent/start` before `finished`; failed preparation still emits `finished` without inventing a run lifecycle. Hosts can therefore include startup work in activity settlement without changing run ids or interpreting session creation as a running child.
+Use `dsh-subagent` to delegate work to named child agents, collect their results, and continue supported child conversations across turns. A composition can offer in-process, ACP, SDK, Codex, or Claude Code children side by side. Choose one-shot children for a single result or continuable children for later messages and interruption. You can also inspect available children, their mode, activity, and lineage without loading or resuming them. Enable at least one supported child backend and a delegation tool.
 
 ## Table of Contents
 
@@ -28,6 +26,8 @@ English | [中文](README.zh.md)
 ## Use this package
 
 This package is the contract every delegation setup shares. You enable it by mounting the service together with one or more provider backends and the model-facing delegation tool; from then on, an agent can delegate work and the service routes each request to the named provider.
+
+`subagent/prepare` observes asynchronous one-shot provider startup in the delegating parent scope. Its `started` and `finished` phases share a process-local symbol token that is never serialized. Successful preparation publishes `subagent/start` before `finished`; failed preparation still emits `finished` without inventing a run lifecycle. Hosts can therefore include startup work in activity settlement without changing run ids or interpreting session creation as a running child.
 
 ### Enabling delegation
 
@@ -97,6 +97,8 @@ A request is validated against the provider's advertised capabilities, a durable
 ### Continuable flow
 
 The manager reserves a child identity, resolves the durable descriptor, creates (or cold-resumes) the child Agent, installs it in an Activation, and submits the prompt. Model-authored messages cross one parent/child edge through fixed Steer scheduling; browser human prompts choose Queue or best-effort Steer through an internal adapter, while other host protocols may retain Queue for distinct turns. A Session queue command admits a live subagent-owned Agent only from its own continuable descriptor. Settlement waits for Agent activity to finish, an empty Inbox, and no owned children, then flushes final Session state with admission open. Under the child lock, the manager revalidates the wake generation, Session sequence, Inbox, and owned children; the synchronous task entry of `Agent.runMaintenance()` claims the idle phase and closes the private subagent Inbox in the same JavaScript turn before handle disposal. An absent direct-child Activation cold-resumes from the persisted session. When a resident Activation settles, the manager tells the child's direct parent in the parent's own turn stream.
+
+Successful local child creation appends a `subagent/catalog` fact to the parent Session. One-shot creation records it after the provider returns; continuable creation records it after initial inbox admission and before returning the child id. Failure releases the child without publishing a compensating catalog event. A one-shot catalog append failure handles the run’s result rejection and preserves the catalog error; disposal failures are logged separately. The `subagentCatalog` projection excludes fork-inherited facts and exposes a direct-child list through `projections.values.subagentCatalog` in Session observations and client snapshots. Invalid own catalog payloads, including unsupported versions, reject projection restoration. Its immutable storage and checkpoint validation use [`dsh-chunked-list`](../../util/chunked-list/README.md). Its view preserves parent catalog event order in O(D) time for D facts. [The parent-catalog decision](../../../.agents/notes/implemented/architecture/2026-09-01-parent-owned-subagent-catalog.md) owns ordering, persistence costs, and alternatives.
 
 ### Ownership and invariants
 

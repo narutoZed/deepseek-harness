@@ -11,11 +11,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-sdk-jsonrpc-server` 通过 stdio 服务 SDK 协议格式，使进程外客户端能够驱动 harness agent（智能体）：它为每个 `sessionId` 打开一个会话、把用户提示词排入队列，并把每个会话事件、agent 状态转换、实时 assistant stream frame 与 subagent 生命周期更新实时流回客户端。把它作为 `jsonrpc` 插件挂载到 Loader 组合中；外围插件树提供其余一切——agent、模型适配器、持久化与工具。Stdout 只承载 JSON-RPC 帧，因此部署不得组合 stdout logger。它通过 dispose（资源释放）根运行时并以 0 退出应答 `shutdown`；EOF 与信号退出归 app bin 负责。
-
-`initialize` 声明 `capabilities.sessionTreeSettled: true`。接受提示词后，服务器在根 agent 空闲、其 next-turn inbox 为空且原生后代的准备阶段和运行周期均结束时发送一次 `session.settled`。服务器观察原生生命周期事件，并在子 agent 退出后保留本地祖先关系；远程运行仍计入其本地父 agent 拥有的工作。原始 `session.status` 仍表示根驱动器的状态。活动结束涵盖排队的父 agent 后续工作，但不把结果归属于单个提示词，也不替代关闭时的资源释放。
-
-`session/export` 接受源会话、已完成轮次、可选结束时间及正数的字节预算。冷导出直接读取持久数据，不启动 agent。`session/fork` 将种子及附件导入目标，使用目标初始化时的模型和工作区。相同目标可重新打开以重试。可信调用方负责授权两侧工作区，不向不可信 HTTP 输入开放快照导入。
+`dsh-sdk-jsonrpc-server` 让进程外客户端通过 stdio JSON-RPC 打开会话、排队提示词，并接收会话事件、实时助手帧和子 agent 更新。将其挂载到提供 agent、模型适配器、持久化与工具的 Loader 组合中。Stdout 专用于 JSON-RPC 帧。客户端可以等待会话树活动结束、导出已完成轮次，并把可信快照 fork 到另一工作区。关闭操作释放根运行时；应用负责 EOF 和信号退出。
 
 ## 目录
 
@@ -32,6 +28,12 @@ kind: "package-reference"
 ## 使用本包
 
 当运行时必须服务 SDK 客户端时挂载本插件：把它加入组合了 agent 服务的 `cordis.yml`，启动运行时，客户端即可通过 stdio 连接。常用路径是显式的——插件需要 `agents` 服务；其余每个能力都来自外围插件树。
+
+`dsh-sdk-jsonrpc-server` 通过 stdio 服务 SDK 协议格式，使进程外客户端能够驱动 harness agent（智能体）：它为每个 `sessionId` 打开一个会话、把用户提示词排入队列，并把每个会话事件、agent 状态转换、实时 assistant stream frame 与 subagent 生命周期更新实时流回客户端。把它作为 `jsonrpc` 插件挂载到 Loader 组合中；外围插件树提供其余一切——agent、模型适配器、持久化与工具。Stdout 只承载 JSON-RPC 帧，因此部署不得组合 stdout logger。它通过 dispose（资源释放）根运行时并以 0 退出应答 `shutdown`；EOF 与信号退出归 app bin 负责。
+
+`initialize` 声明 `capabilities.sessionTreeSettled: true`。接受提示词后，服务器在根 agent 空闲、其 next-turn inbox 为空且原生后代的准备阶段和运行周期均结束时发送一次 `session.settled`。服务器观察原生生命周期事件，并在子 agent 退出后保留本地祖先关系；远程运行仍计入其本地父 agent 拥有的工作。原始 `session.status` 仍表示根驱动器的状态。活动结束涵盖排队的父 agent 后续工作，但不把结果归属于单个提示词，也不替代关闭时的资源释放。
+
+`session/export` 接受源会话、已完成轮次、可选结束时间及正数的字节预算。冷导出直接读取持久数据，不启动 agent。`session/fork` 将种子及附件导入目标，使用目标初始化时的模型和工作区。相同目标可重新打开以重试。可信调用方负责授权两侧工作区，不向不可信 HTTP 输入开放快照导入。
 
 服务端在 `session/created` 时从持久描述符提取子代理创建元数据。宿主无需关联工具调用、解析渲染后的回执或打开私有会话文件，就能展示创建标签。
 

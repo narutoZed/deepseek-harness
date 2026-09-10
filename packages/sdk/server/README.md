@@ -11,11 +11,7 @@ The SDK host receives `interaction.request` when a root agent asks the user a qu
 
 ## Summary
 
-`dsh-sdk-jsonrpc-server` serves the SDK wire protocol over stdio so out-of-process clients can drive harness agents: it opens one session per `sessionId`, queues user prompts, and streams every session event, agent status transition, live assistant stream frame, and subagent lifecycle update back to the client. Mount it as the `jsonrpc` plugin in a Loader composition; the surrounding tree supplies everything else — agents, model adapters, persistence, and tools. Stdout carries only JSON-RPC frames, so a deployment must not compose a stdout logger. It answers `shutdown` by disposing the root runtime and exiting 0; the app bin owns EOF and signal exits.
-
-`initialize` advertises `capabilities.sessionTreeSettled: true`. After an accepted prompt, the server emits `session.settled` once the root is idle, its next-turn inbox is empty, and native descendant preparation and run epochs have settled. The server observes native lifecycle events and retains local ancestry across child retirement; remote runs still count as work owned by their local parent. Raw `session.status` remains the root driver status. Settlement includes queued parent follow-up work, but does not assign a result to an individual prompt or replace shutdown disposal.
-
-`session/export` accepts a source session, completed turn, optional end timestamp and a positive byte budget. Cold export reads persistence without starting an agent. `session/fork` imports that seed and attachments into a destination using its initialized model and workspace. Identical targets can be reopened for retry. The trusted caller authorizes both workspaces and keeps snapshot import out of untrusted HTTP inputs.
+`dsh-sdk-jsonrpc-server` lets out-of-process clients open sessions, queue prompts, and receive session events, live assistant frames, and subagent updates over stdio JSON-RPC. Mount it in a Loader composition that supplies agents, model adapters, persistence, and tools. Keep stdout exclusively for JSON-RPC frames. Clients can wait for session-tree settlement, export completed turns, and fork trusted snapshots into another workspace. Shutdown disposes the root runtime; the application owns EOF and signal exits.
 
 ## Table of Contents
 
@@ -32,6 +28,12 @@ The SDK host receives `interaction.request` when a root agent asks the user a qu
 ## Use this package
 
 Mount this plugin when a runtime must serve SDK clients: add it to a `cordis.yml` that composes the agent service, boot the runtime, and clients connect over stdio. The common path is explicit — the plugin needs the `agents` service; every other capability comes from the surrounding tree.
+
+`dsh-sdk-jsonrpc-server` serves the SDK wire protocol over stdio so out-of-process clients can drive harness agents: it opens one session per `sessionId`, queues user prompts, and streams every session event, agent status transition, live assistant stream frame, and subagent lifecycle update back to the client. Mount it as the `jsonrpc` plugin in a Loader composition; the surrounding tree supplies everything else — agents, model adapters, persistence, and tools. Stdout carries only JSON-RPC frames, so a deployment must not compose a stdout logger. It answers `shutdown` by disposing the root runtime and exiting 0; the app bin owns EOF and signal exits.
+
+`initialize` advertises `capabilities.sessionTreeSettled: true`. After an accepted prompt, the server emits `session.settled` once the root is idle, its next-turn inbox is empty, and native descendant preparation and run epochs have settled. The server observes native lifecycle events and retains local ancestry across child retirement; remote runs still count as work owned by their local parent. Raw `session.status` remains the root driver status. Settlement includes queued parent follow-up work, but does not assign a result to an individual prompt or replace shutdown disposal.
+
+`session/export` accepts a source session, completed turn, optional end timestamp and a positive byte budget. Cold export reads persistence without starting an agent. `session/fork` imports that seed and attachments into a destination using its initialized model and workspace. Identical targets can be reopened for retry. The trusted caller authorizes both workspaces and keeps snapshot import out of untrusted HTTP inputs.
 
 The server derives child creation metadata from the durable descriptor at `session/created`. Hosts can display the creation label without correlating tool calls, parsing rendered receipts or opening private session files.
 
