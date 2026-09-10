@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, TypeAlias, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StrictBool
 
 from .errors import JsonRpcError, TransportClosedError
 from .models import IncomingRequest, InitializeResponse, JsonObject, JsonValue, Notification
@@ -680,7 +680,7 @@ class _SessionPromptResponse(BaseModel):
 
 
 class _InteractionRespondResponse(BaseModel):
-    accepted: bool
+    accepted: StrictBool
 
 
 class _ShutdownResponse(BaseModel):
@@ -704,9 +704,9 @@ class _SessionForkResponse(BaseModel):
 
 
 class _SubagentPromptResponse(BaseModel):
-    messageId: str
-    replayed: bool
+    messageId: str = Field(min_length=1)
+    replayed: StrictBool
 
 
 class _SessionLiveResponse(BaseModel):
-    live: bool
+    live: StrictBool

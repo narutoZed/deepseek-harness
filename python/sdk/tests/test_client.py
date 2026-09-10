@@ -1282,3 +1282,23 @@ for line in sys.stdin:
                 subscription.next(timeout_seconds=1)
                 subscription.acknowledge()
             assert subscription.pending_count == 0
+
+
+@pytest.mark.parametrize("operation,reply", [
+    ("approval", {"accepted": "yes"}),
+    ("live", {"live": "true"}),
+    ("prompt", {"messageId": "", "replayed": False}),
+    ("prompt", {"messageId": "message", "replayed": "no"}),
+])
+def test_control_receipts_reject_coercible_flags_and_empty_ids(monkeypatch, operation, reply) -> None:
+    from pydantic import ValidationError
+
+    client = object.__new__(HarnessClient)
+    monkeypatch.setattr(client, "_request_raw", lambda *_args, **_kwargs: reply)
+    with pytest.raises(ValidationError):
+        if operation == "approval":
+            client.respond_approval("child", "question", "approved")
+        elif operation == "live":
+            client.is_session_live("root", "child")
+        else:
+            client.subagent_prompt("root", "root", "child", [{"type": "text", "text": "Continue"}], request_id="r1")
