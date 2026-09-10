@@ -7,7 +7,9 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-根 agent 向用户提问时，SDK 宿主会收到 `interaction.request`。`interaction/respond` 接受每个问题 id 对应的一条回答，并继续同一个等待中的工具。无效回答保留等待状态；中止或 SDK 关闭会拒绝提问并清除等待状态。这一机制传输用户问题，不传输权限审批请求。
+根 agent 向用户提问时，SDK 宿主会收到 `interaction.request`。`interaction/respond` 接受每个问题 id 对应的一条回答，并继续同一个等待中的工具。无效回答保留等待状态；中止或 SDK 关闭会拒绝提问并清除等待状态。
+
+组合提供 `approval` 时，服务器声明 `approvalResponses`，并转发 SDK 所属根会话及其后代的待处理请求。宿主通过 `approval/respond` 返回一次明确决定；取消和关闭会拒绝待处理审批。按地址控制可续聊子会话使用原生子代理服务，并声明 `subagentControl`。服务器在接收提示词或请求中断前验证持久化的根会话祖先关系和直接父会话。协议字段及重试限制见[协议说明](../protocol/README.zh.md)。
 
 ## 概述
 

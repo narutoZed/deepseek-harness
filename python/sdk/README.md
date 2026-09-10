@@ -10,6 +10,12 @@ python -m pip install deepseek-harness-sdk
 
 `harness.client.respond_interaction(interaction_id, answers)` answers `interaction.request` notifications from an `on_notification` callback or a separate control thread. Each answer contains the question `id`, a `selected` list and optional `custom` text.
 
+`harness.capabilities` exposes the initialized runtime’s control support. When `approvalResponses` is true, `client.respond_approval(session_id, interaction_id, decision)` answers the exact `approval.request` with `approved` or `cancelled`; `approved` allows the requested operation once. Hosts present the question and authorize the session.
+
+`run_subagent(input, root_session_id=..., parent_session_id=..., child_session_id=..., request_id=...)` continues a native continuable child in its existing history and waits for root-tree settlement. Its optional `on_accepted` callback receives the inbox id before settlement. `client.subagent_prompt()` returns admission immediately, `client.interrupt_subagent()` interrupts only that child, and `client.is_session_live()` checks a parent under its root. These operations require `subagentControl`; the high-level waiter also requires `sessionTreeSettled`. The [wire protocol](../../packages/sdk/protocol/README.md) defines ancestry, parent availability and in-process retry limits.
+
+Notification subscriptions support `next(timeout_seconds=...)`, `pending_count`, and `acknowledge()`. Consumers using `pending_count` to drain a persistent observer must acknowledge each consumed notification after processing it; ordinary consumers may omit accounting.
+
 ## Start a runtime
 
 The Python SDK has no separate application entrypoint. It launches the bundled `dsh` CLI with `--profile sdk`; the selected profile owns the JSON-RPC server, agent composition, credentials, persistence, tools, and shutdown behavior.

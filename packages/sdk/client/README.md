@@ -9,6 +9,8 @@ English | [中文](README.zh.md)
 
 `HarnessClient.respondInteraction(interactionId, answers)` answers `interaction.request` notifications without starting a new turn. The host owns question presentation; the server validates the complete answer set before settling the pending tool.
 
+For runtimes advertising the corresponding capabilities, `HarnessClient.respondApproval()` answers an `approval.request`, `promptSubagent()` admits input to a continuable descendant, `interruptSubagent()` cancels only that child’s active turn, and `isSessionLive()` checks a parent within its SDK root. Hosts authorize the root and present pending questions; wire identities and retry limits are defined by the [protocol](../protocol/README.md).
+
 ## Summary
 
 `dsh-sdk-client` lets TypeScript programs start and drive a complete DeepSeek Harness runtime over stdio JSON-RPC. Use `DeepSeekHarness` to open sessions, send text or image prompts, collect event and notification streams, and obtain the last committed assistant response when the runtime becomes idle; use `HarnessClient` for direct protocol requests and subscriptions. Callers may provide `dshBin`; otherwise the client resolves the same-version `@deepseek-ai/dsh` executable. The client owns the subprocess across runs, exposes typed transport and protocol failures, and reaps it on `close()` or `await using`. It is suitable when the caller can choose the runtime profile and launch settings.

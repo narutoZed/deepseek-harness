@@ -7,7 +7,7 @@ from typing import Callable
 
 from .client import HarnessClient, HarnessConfig
 from .errors import SdkProtocolError
-from .models import JsonObject, Notification
+from .models import JsonObject, Notification, RuntimeCapabilities
 
 
 @dataclass(slots=True)
@@ -89,6 +89,7 @@ class DeepSeekHarness:
         )
         self._initialized = False
         self._session_tree_settled = False
+        self.capabilities = RuntimeCapabilities()
 
     def __enter__(self) -> "DeepSeekHarness":
         self.start()
@@ -112,6 +113,7 @@ class DeepSeekHarness:
             reasoning_effort=self.config.reasoning_effort,
             max_tokens=self.config.max_tokens,
         )
+        self.capabilities = initialized.capabilities
         self._session_tree_settled = initialized.capabilities.sessionTreeSettled
         self._initialized = True
 
@@ -136,6 +138,45 @@ class DeepSeekHarness:
             input, on_notification=on_notification, request_id=request_id,
             wait_for_subagents=wait_for_subagents,
         )
+
+
+    def run_subagent(
+        self, input: str | list[JsonObject], *, root_session_id: str, parent_session_id: str,
+        child_session_id: str, request_id: str, client_time_zone: str | None = None,
+        on_notification: Callable[[Notification], None] | None = None,
+        on_accepted: Callable[[str], None] | None = None,
+    ) -> str:
+        """Admit a child continuation and wait for the root activity interval to settle.
+
+        The caller retains the exact root and direct parent/child identities.
+        on_accepted receives the durable inbox id before execution settles.
+        An in-process replay acknowledges its prior message without waiting again.
+        """
+        self.start()
+        if not self.capabilities.subagentControl or not self.capabilities.sessionTreeSettled:
+            raise SdkProtocolError("Runtime does not support settled subagent control")
+        with self.client.subscribe_session_notifications(root_session_id) as subscription:
+            receipt = self.client.subagent_prompt(
+                root_session_id, parent_session_id, child_session_id, normalize_input(input),
+                request_id=request_id, client_time_zone=client_time_zone,
+                notification_subscription=subscription,
+            )
+            message_id = str(receipt["messageId"])
+            if on_accepted is not None:
+                on_accepted(message_id)
+            if receipt["replayed"]:
+                return message_id
+            received = False
+            while True:
+                notification = subscription.next()
+                if not received:
+                    if not _is_inbox_receipt(notification, child_session_id, message_id):
+                        continue
+                    received = True
+                if on_notification is not None:
+                    on_notification(notification)
+                if notification.method == "session.settled" and notification.payload.get("sessionId") == root_session_id:
+                    return message_id
 
 
 class Session:

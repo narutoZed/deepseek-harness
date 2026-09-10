@@ -11,6 +11,7 @@
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SubagentPromptRequest } from '@deepseek-ai/dsh-subagent'
 import type { SubagentStopReason } from '@deepseek-ai/dsh-subagent'
 
 /** Parameters for the process-wide SDK handshake. */
@@ -32,7 +33,7 @@ export interface InitializeResult {
   /** Wire-stable server identity (`deepseek-harness-sdk-runtime`) and version. */
   serverInfo: { name: string; version: string }
   /** Optional runtime features; absence preserves compatibility with older runtimes. */
-  capabilities?: { sessionTreeSettled?: boolean }
+  capabilities?: { sessionTreeSettled?: boolean; approvalResponses?: boolean; subagentControl?: boolean }
 }
 
 /** One user turn on one SDK session. */
@@ -198,6 +199,51 @@ export interface InteractionRespondResult {
   accepted: true
 }
 
+/** One pending native permission decision, independent of user questions. */
+export interface ApprovalRequestNotification {
+  sessionId: string
+  interactionId: string
+  toolName: string
+  callId?: string
+  reason?: string
+}
+
+/** A permission question that was answered or withdrawn by its owner. */
+export interface ApprovalResolvedNotification {
+  sessionId: string
+  interactionId: string
+  outcome: 'allowed-once' | 'rejected' | 'cancelled'
+}
+
+/** Answer one exact session's pending permission request. */
+export interface ApprovalRespondParams {
+  sessionId: string
+  interactionId: string
+  decision: 'approved' | 'cancelled'
+}
+
+/** Human input for a continuable descendant under an SDK-owned root. */
+export interface SdkSubagentPromptParams {
+  rootSessionId: string
+  parentSessionId: string
+  childSessionId: string
+  requestId: string
+  content: SubagentPromptRequest['content']
+  clientTimeZone?: string
+}
+
+/** A subagent inbox receipt and in-process retry result. */
+export interface SdkSubagentPromptResult extends SessionPromptResult {
+  replayed: boolean
+}
+
+/** Cancel only one continuable descendant under an SDK-owned root. */
+export interface SdkSubagentInterruptParams {
+  rootSessionId: string
+  parentSessionId: string
+  childSessionId: string
+}
+
 /** Server-to-client notifications by JSON-RPC method name. */
 export interface HarnessSdkNotificationMap {
   'session.event': SessionEventNotification
@@ -207,6 +253,8 @@ export interface HarnessSdkNotificationMap {
   'subagent.started': SubagentStartedNotification
   'subagent.finished': SubagentFinishedNotification
   'interaction.request': InteractionRequestNotification
+  'approval.request': ApprovalRequestNotification
+  'approval.resolved': ApprovalResolvedNotification
 }
 
 /** Client-to-server request methods with their param and result shapes. */
@@ -217,5 +265,9 @@ export interface HarnessSdkRequestMap {
   'session/export': { params: SessionExportParams; result: SessionForkSnapshot }
   'session/fork': { params: SessionForkParams; result: SessionForkResult }
   'interaction/respond': { params: InteractionRespondParams; result: InteractionRespondResult }
+  'session/is-live': { params: { rootSessionId: string; sessionId: string }; result: { live: boolean } }
+  'approval/respond': { params: ApprovalRespondParams; result: InteractionRespondResult }
+  'subagent/prompt': { params: SdkSubagentPromptParams; result: SdkSubagentPromptResult }
+  'subagent/interrupt': { params: SdkSubagentInterruptParams; result: InteractionRespondResult }
   'shutdown': { params: undefined; result: Record<string, never> }
 }

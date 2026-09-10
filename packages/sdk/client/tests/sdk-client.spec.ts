@@ -699,3 +699,38 @@ describe('pure helpers', () => {
     ])).toBe('ab')
   })
 })
+
+
+describe('addressed SDK controls', () => {
+  const address = { rootSessionId: 'root', parentSessionId: 'parent', childSessionId: 'child' }
+  it('preserves control capability flags and exact request identities', async () => {
+    const dir = await tempDir('sdk-control-')
+    const record = join(dir, 'request.json')
+    const harness = harnessWith({ FAKE_RECORD_CONTROL: record, FAKE_CONTROL_CAPABILITIES: '1' })
+    const handshake = await harness.client.initialize({ provider: 'p', model: 'm', cwd: dir })
+    expect(handshake.capabilities).toEqual({ approvalResponses: true, subagentControl: true, sessionTreeSettled: true })
+    const approval = { sessionId: 'child', interactionId: 'question', decision: 'approved' as const }
+    expect(await harness.client.respondApproval(approval)).toBe(true)
+    expect(JSON.parse(await readFile(record, 'utf8'))).toMatchObject({ method: 'approval/respond', params: approval })
+    const prompt = { ...address, requestId: 'input-1', content: [{ type: 'text' as const, text: 'Continue' }] }
+    expect(await harness.client.promptSubagent(prompt)).toEqual({ messageId: 'child-message', replayed: false })
+    expect(JSON.parse(await readFile(record, 'utf8'))).toMatchObject({ method: 'subagent/prompt', params: prompt })
+    expect(await harness.client.interruptSubagent(address)).toBe(true)
+    expect(JSON.parse(await readFile(record, 'utf8'))).toMatchObject({ method: 'subagent/interrupt', params: address })
+    expect(await harness.client.isSessionLive('root', 'parent')).toBe(true)
+    expect(JSON.parse(await readFile(record, 'utf8'))).toMatchObject({
+      method: 'session/is-live', params: { rootSessionId: 'root', sessionId: 'parent' },
+    })
+  })
+
+  it.each(['null', '{}', '{"accepted":"yes","live":"yes","messageId":3}', '{"messageId":"","replayed":false}',
+    '{"messageId":"message","replayed":"yes"}'])('rejects malformed control receipt %s', async (reply) => {
+    const harness = harnessWith({ FAKE_CONTROL_RESPONSE: reply })
+    await expect(harness.client.respondApproval({ sessionId: 's', interactionId: 'i', decision: 'cancelled' }))
+      .rejects.toThrow(SdkProtocolError)
+    await expect(harness.client.interruptSubagent(address)).rejects.toThrow(SdkProtocolError)
+    await expect(harness.client.isSessionLive('root', 'child')).rejects.toThrow(SdkProtocolError)
+    await expect(harness.client.promptSubagent({ ...address, requestId: 'r', content: [{ type: 'text', text: 'x' }] }))
+      .rejects.toThrow(SdkProtocolError)
+  })
+})

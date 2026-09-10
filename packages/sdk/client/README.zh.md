@@ -9,6 +9,8 @@ kind: "package-library"
 
 `HarnessClient.respondInteraction(interactionId, answers)` 回答 `interaction.request` 通知，不会启动新轮次。宿主负责展示问题；服务端在结束工具等待前校验完整的回答集合。
 
+对于声明对应能力的运行时，`HarnessClient.respondApproval()` 回复 `approval.request`，`promptSubagent()` 向可续聊后代提交输入，`interruptSubagent()` 只取消该子会话的当前轮次，`isSessionLive()` 检查 SDK 根会话范围内的父会话是否存活。宿主负责根会话授权与待处理问题展示；协议标识和重试限制由[协议说明](../protocol/README.zh.md)定义。
+
 ## 概述
 
 `dsh-sdk-client` 让 TypeScript 程序通过 stdio JSON-RPC 启动并驱动完整的 DeepSeek Harness 运行时。使用 `DeepSeekHarness` 可打开会话、发送文本或图像提示词、收集事件与通知流，并在运行时进入 idle 后取得最后提交的助手响应；使用 `HarnessClient` 可直接发送协议请求和订阅通知。调用方可以提供 `dshBin`；否则客户端解析同版本的 `@deepseek-ai/dsh` 可执行文件。客户端跨多次运行持有子进程，公开类型化的传输与协议错误，并在 `close()` 或 `await using` 时回收进程。它适用于调用方能够选择运行时 profile 和启动设置的场景。

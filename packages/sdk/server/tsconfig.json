@@ -40,6 +40,9 @@
     },
     {
       "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../../interaction/user-approval"
     }
   ]
 }

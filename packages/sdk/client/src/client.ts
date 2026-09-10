@@ -19,6 +19,10 @@ import {
   type InitializeParams,
   type InitializeResult,
   type InteractionRespondParams,
+  type ApprovalRespondParams,
+  type SdkSubagentPromptParams,
+  type SdkSubagentPromptResult,
+  type SdkSubagentInterruptParams,
   type SessionPromptParams,
   type SdkPromptContentBlock,
 } from '@deepseek-ai/dsh-sdk-protocol'
@@ -283,10 +287,14 @@ export class HarnessClient {
     let capabilities: InitializeResult['capabilities']
     if (result.capabilities !== undefined) {
       if (!isRecord(result.capabilities)
-        || (result.capabilities.sessionTreeSettled !== undefined && typeof result.capabilities.sessionTreeSettled !== 'boolean')) {
+        || ['sessionTreeSettled', 'approvalResponses', 'subagentControl'].some(key =>
+          isRecord(result.capabilities) && result.capabilities[key] !== undefined && typeof result.capabilities[key] !== 'boolean')) {
         throw new SdkProtocolError('initialize returned malformed capabilities')
       }
-      capabilities = { sessionTreeSettled: result.capabilities.sessionTreeSettled === true }
+      capabilities = { sessionTreeSettled: result.capabilities.sessionTreeSettled === true,
+        ...(result.capabilities.approvalResponses === undefined
+          ? {} : { approvalResponses: result.capabilities.approvalResponses === true }),
+        ...(result.capabilities.subagentControl === undefined ? {} : { subagentControl: result.capabilities.subagentControl === true }) }
     }
     return {
       serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version },
@@ -338,6 +346,53 @@ export class HarnessClient {
     }
     return result.accepted
   }
+
+  /**
+   * Read current registry membership under an SDK-owned root without resuming.
+   * @param rootSessionId - owning SDK root.
+   * @param sessionId - root or descendant to inspect.
+   * @returns whether the exact related session currently has a live agent.
+   */
+  async isSessionLive(rootSessionId: string, sessionId: string): Promise<boolean> {
+    const result = await this.request('session/is-live', { rootSessionId, sessionId })
+    if (!isRecord(result) || typeof result.live !== 'boolean') throw new SdkProtocolError('session/is-live returned no boolean')
+    return result.live
+  }
+
+  /**
+   * Answer a session's pending native permission question.
+   * @param params - exact session/question and single-use decision.
+   * @returns acceptance of the decision; withdrawn questions reject.
+   */
+  async respondApproval(params: ApprovalRespondParams): Promise<boolean> {
+    const result = await this.request('approval/respond', { ...params })
+    if (!isRecord(result) || result.accepted !== true) throw new SdkProtocolError('approval/respond returned no acceptance flag')
+    return true
+  }
+
+  /**
+   * Queue a continuation into its original child conversation.
+   * @param params - SDK root, direct parent/child, request identity and content.
+   * @returns inbox identity and in-process replay flag; completion arrives as root settlement.
+   */
+  async promptSubagent(params: SdkSubagentPromptParams): Promise<SdkSubagentPromptResult> {
+    const result = await this.request('subagent/prompt', { ...params })
+    if (!isRecord(result) || typeof result.messageId !== 'string' || !result.messageId
+      || typeof result.replayed !== 'boolean') throw new SdkProtocolError('subagent/prompt returned an invalid receipt')
+    return { messageId: result.messageId, replayed: result.replayed }
+  }
+
+  /**
+   * Signal only the selected child activation.
+   * @param params - SDK root and direct parent/child address.
+   * @returns signal admission, not child quiescence.
+   */
+  async interruptSubagent(params: SdkSubagentInterruptParams): Promise<boolean> {
+    const result = await this.request('subagent/interrupt', { ...params })
+    if (!isRecord(result) || result.accepted !== true) throw new SdkProtocolError('subagent/interrupt returned no acceptance flag')
+    return true
+  }
+
 
   /**
    * Send one JSON-RPC request and await its result.

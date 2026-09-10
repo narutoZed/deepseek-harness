@@ -1210,3 +1210,75 @@ def test_capability_flags_are_not_coerced_from_strings() -> None:
 
     with pytest.raises(ValidationError):
         InitializeResponse.model_validate({"capabilities": {"sessionTreeSettled": "yes"}})
+
+
+def test_addressed_controls_preserve_wire_identity_and_validate_receipts(tmp_path: Path) -> None:
+    script = tmp_path / "controls_runtime.py"
+    script.write_text('''
+import json, sys
+expected = [
+    ("approval/respond", {"sessionId": "child", "interactionId": "question", "decision": "approved"}, {"accepted": True}),
+    ("session/is-live", {"rootSessionId": "root", "sessionId": "parent"}, {"live": True}),
+    ("subagent/interrupt", {"rootSessionId": "root", "parentSessionId": "parent", "childSessionId": "child"}, {"accepted": True}),
+    ("subagent/prompt", {"rootSessionId": "root", "parentSessionId": "parent", "childSessionId": "child", "requestId": "r1", "content": [{"type": "text", "text": "Continue"}], "clientTimeZone": "Asia/Shanghai"}, {"messageId": "native-message", "replayed": False}),
+]
+for line in sys.stdin:
+    request = json.loads(line)
+    if request["method"] == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {}}), flush=True)
+        break
+    method, params, result = expected.pop(0)
+    assert request["method"] == method and request["params"] == params
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
+assert not expected
+''', encoding="utf-8")
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
+        assert client.respond_approval("child", "question", "approved") is True
+        assert client.is_session_live("root", "parent") is True
+        assert client.interrupt_subagent("root", "parent", "child") is True
+        assert client.subagent_prompt("root", "parent", "child", [{"type": "text", "text": "Continue"}],
+                                     request_id="r1", client_time_zone="Asia/Shanghai") == {
+                                         "messageId": "native-message", "replayed": False}
+
+
+def test_child_waiter_keeps_early_receipt_until_root_settlement(tmp_path: Path) -> None:
+    script = tmp_path / "continuation_runtime.py"
+    script.write_text('''
+import json, sys
+def notify(method, params):
+    print(json.dumps({"jsonrpc": "2.0", "method": method, "params": params}), flush=True)
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request["method"]
+    if method == "initialize":
+        result = {"capabilities": {"subagentControl": True, "sessionTreeSettled": True, "approvalResponses": True}}
+    elif method == "subagent/prompt":
+        p = request["params"]
+        notify("subagent.started", {"parentSessionId": "root", "childSessionId": "child", "mode": "continuable"})
+        notify("session.event", {"sessionId": "child", "event": {"type": "agent/inbox/spliced", "data": {"inserted": [{"id": "message-1"}]}}})
+        notify("session.status", {"sessionId": "root", "status": "idle"})
+        notify("session.settled", {"sessionId": "child"})
+        notify("session.settled", {"sessionId": "root"})
+        result = {"messageId": "message-1", "replayed": False}
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
+    if method == "shutdown": break
+''', encoding="utf-8")
+    observed = []
+    with DeepSeekHarness(dsh_home=str(tmp_path / "home"),
+                         _launch_args=(sys.executable, str(script))) as harness:
+        with harness.client.subscribe_notifications() as subscription:
+            assert harness.run_subagent("Continue", root_session_id="root", parent_session_id="root",
+                                        child_session_id="child", request_id="r1",
+                                        on_accepted=lambda message: observed.append(("accepted", message)),
+                                        on_notification=lambda notification: observed.append((notification.method, notification.payload))) == "message-1"
+            assert harness.capabilities.approvalResponses
+            assert observed[0] == ("accepted", "message-1")
+            assert observed[-1] == ("session.settled", {"sessionId": "root"})
+            count = subscription.pending_count
+            assert count == 5
+            for _ in range(count):
+                subscription.next(timeout_seconds=1)
+                subscription.acknowledge()
+            assert subscription.pending_count == 0

@@ -30,6 +30,8 @@ class ServerInfo(BaseModel):
 
 class RuntimeCapabilities(BaseModel):
     sessionTreeSettled: StrictBool = False
+    approvalResponses: StrictBool = False
+    subagentControl: StrictBool = False
 
 
 class InitializeResponse(BaseModel):

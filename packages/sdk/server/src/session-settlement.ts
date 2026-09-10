@@ -101,7 +101,13 @@ export class SdkSessionSettlement {
     this.onSettled(sessionId)
   }
 
-  private belongsTo(parent: string, root: string): boolean {
+  /**
+   * Test retained native lineage, including ancestors whose Agent is no longer live.
+   * @param parent - session whose ancestry is inspected.
+   * @param root - SDK root that must own that ancestry.
+   * @returns whether the session is the root or its observed descendant.
+   */
+  belongsTo(parent: string, root: string): boolean {
     const visited = new Set<string>()
     let current: string | undefined = parent
     while (current !== undefined && !visited.has(current)) {

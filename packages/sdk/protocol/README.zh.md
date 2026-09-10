@@ -42,22 +42,39 @@ kind: "package-library"
 
 `session/prompt` 接受用于关联的可选 `requestId`。两个操作均将其保留为 `source.rpcId`。这些身份不提供跨进程重试恢复。
 
+### 审批与后代控制
+
+`initialize` 声明可选布尔值 `approvalResponses` 和 `subagentControl`。`approval.request` 包含 `sessionId`、`interactionId`、`toolName`，以及可选的 `callId` 和 `reason`。`approval/respond` 要求相同的会话与交互 id，并附带 `decision: "approved" | "cancelled"`；批准仅允许一次操作，取消则拒绝操作。`approval.resolved` 报告 `allowed-once`、`rejected` 或 `cancelled`。过期或已消费的问题以 `data.code: "interaction_expired"` 拒绝。
+
+`subagent/prompt` 接收 `rootSessionId`、直接 `parentSessionId`、`childSessionId`、`requestId`、持久化 `content` 和可选的 `clientTimeZone`，返回 `{ messageId, replayed }`。同一进程内的相同重试复用接收回执；相同请求 id 携带不同内容会被拒绝。`subagent/interrupt` 接收这三个会话 id，请求取消该子会话当前轮次后返回 `{ accepted: true }`。两者都要求子会话在该根会话下有持久记录且可续聊。直接父会话必须存活；SDK 根会话可以从持久化记录重新打开，原生服务会恢复其未加载的可续聊子会话。其他后代与父会话继续运行。`session/is-live` 检查 `{ rootSessionId, sessionId }`，不会打开 agent。
+
+可信宿主负责外部用户授权并保留完整会话地址。服务器验证原生祖先关系，但不认证 JSON-RPC 对端。持久化的跨进程请求去重由宿主负责；新运行时不会保留之前的请求回执。
+
 ### 分帧与传输
 
-在你拥有的字节流上，每个 `\n` 结尾的行承载一条 JSON-RPC 2.0 消息。同时带 `id` 与 `method` 的帧是请求，仅 `id` 是响应，仅 `method` 是通知；格式错误的行会被忽略。没有注册处理器的请求应答 `-32601`，处理器失败应答 `-32603`，错误响应会以 `JsonRpcResponseError` 拒绝挂起的请求，并保留协议中的 `code` 与可选 `data`。`start()` 挂接流监听器，`close()` 移除监听器并拒绝挂起请求，但不销毁流。
+在你拥有的字节流上，每个 `\n` 结尾的行承载一条 JSON-RPC 2.0 消息。同时带 `id` 与 `method` 的帧是请求，仅 `id` 是响应，仅 `method` 是通知；格式错误的行会被忽略。没有注册处理器的请求应答 `-32601`，普通处理器失败应答 `-32603`，显式的 `JsonRpcResponseError` 失败保留其 code 和 data，错误响应会以 `JsonRpcResponseError` 拒绝挂起的请求，并保留协议中的 `code` 与可选 `data`。`start()` 挂接流监听器，`close()` 移除监听器并拒绝挂起请求，但不销毁流。
 
 ### SDK 方法
 
-两个协议端共享同一套方法：四个客户端到服务端请求与六个服务端到客户端通知。
+两个协议端共享以下方法。
 
 | 方向 | 方法 | 载荷类型 |
 |---|---|---|
 | client→server | `initialize` | `InitializeParams` → `InitializeResult` |
 | client→server | `session/prompt` | `SessionPromptParams` → `SessionPromptResult`（持久入队回执） |
 | client→server | `interaction/respond` | `InteractionRespondParams` → `InteractionRespondResult` |
+| client→server | `session/steer` | `SessionSteerParams` → `SessionPromptResult` |
+| client→server | `session/export` | `SessionExportParams` → `SessionForkSnapshot` |
+| client→server | `session/fork` | `SessionForkParams` → `SessionForkResult` |
+| client→server | `session/is-live` | `{ rootSessionId, sessionId }` → `{ live }` |
+| client→server | `approval/respond` | `ApprovalRespondParams` → `InteractionRespondResult` |
+| client→server | `subagent/prompt` | `SdkSubagentPromptParams` → `SdkSubagentPromptResult` |
+| client→server | `subagent/interrupt` | `SdkSubagentInterruptParams` → `InteractionRespondResult` |
 | client→server | `shutdown` | 无参数 → `{}` |
 | server→client | `session.event` | `SessionEventNotification`（运行时内每个会话，不过滤） |
 | server→client | `interaction.request` | `InteractionRequestNotification` |
+| server→client | `approval.request` | `ApprovalRequestNotification` |
+| server→client | `approval.resolved` | `ApprovalResolvedNotification` |
 | server→client | `session.status` | `SessionStatusNotification`（整个 agent 的 `running`/`idle` 转换） |
 | server→client | `session.settled` | `SessionSettledNotification`（协商确定的根活动结束） |
 | server→client | `session.assistant_stream` | `SessionAssistantStreamNotification`（实时 assistant stream frame） |
@@ -130,8 +147,8 @@ kind: "package-library"
 这些限制说明协议未覆盖或未承诺的内容。它们是当前包约束，不是与其他协议格式的对比或任务积压。
 
 - **无协议版本协商**——握手只携带 `serverInfo.version`（`0.0.1`，客户端不校验）；处于预发布阶段，无兼容承诺。
-- **无取消与会话关闭方法**——客户端放弃轮次的方式是关闭运行时进程；见 [JSON-RPC 服务插件](../server/README.zh.md)。
-- **server→client 请求是未使用的功能**——传输层支持，但服务器从不发送；Python SDK 的应答接口为未来审批流程预留。
+- **无根会话取消与会话关闭方法**——客户端通过关闭运行时进程放弃根会话执行；见 [JSON-RPC 服务插件](../server/README.zh.md)。
+- **server→client 请求是未使用的功能**——传输层支持，但服务器从不发送；审批使用通知和客户端到服务端的回复。
 
 <a id="dev-note"></a>
 ### 开发备注

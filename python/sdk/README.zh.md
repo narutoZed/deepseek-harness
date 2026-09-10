@@ -10,6 +10,12 @@ python -m pip install deepseek-harness-sdk
 
 `harness.client.respond_interaction(interaction_id, answers)` 可以在 `on_notification` 回调或独立控制线程中回答 `interaction.request` 通知。每条回答包含问题 `id`、`selected` 列表和可选的 `custom` 文本。
 
+`harness.capabilities` 提供初始化后运行时的控制能力。`approvalResponses` 为 true 时，`client.respond_approval(session_id, interaction_id, decision)` 使用 `approved` 或 `cancelled` 回复指定的 `approval.request`；`approved` 仅允许所请求的操作执行一次。宿主负责展示问题和会话授权。
+
+`run_subagent(input, root_session_id=..., parent_session_id=..., child_session_id=..., request_id=...)` 在原有历史中继续原生可续聊子会话，并等待根会话树活动结束。可选的 `on_accepted` 回调会在活动结束前收到 inbox id。`client.subagent_prompt()` 立即返回接收回执，`client.interrupt_subagent()` 只中断该子会话，`client.is_session_live()` 检查根会话范围内的父会话是否存活。这些操作需要 `subagentControl`，高层等待方法还需要 `sessionTreeSettled`。[协议说明](../../packages/sdk/protocol/README.zh.md)定义祖先关系、父会话可用性和进程内重试限制。
+
+通知订阅支持 `next(timeout_seconds=...)`、`pending_count` 和 `acknowledge()`。使用 `pending_count` 排空持续观察器的调用方必须在处理每条通知后确认消费；普通调用方可以不使用计数。
+
 ## 启动运行时
 
 Python SDK 没有独立的应用入口。它以 `--profile sdk` 启动内置的 `dsh` CLI；所选 profile 负责 JSON-RPC 服务器、agent 组合、凭据、持久化、工具和关闭流程。

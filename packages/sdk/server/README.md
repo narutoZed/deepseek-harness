@@ -7,7 +7,9 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
-The SDK host receives `interaction.request` when a root agent asks the user a question. `interaction/respond` accepts one answer per question id and resumes the same pending tool. Invalid answers leave it pending; abort or SDK shutdown rejects it and removes the pending state. This transports user questions, not permission-approval requests.
+The SDK host receives `interaction.request` when a root agent asks the user a question. `interaction/respond` accepts one answer per question id and resumes the same pending tool. Invalid answers leave it pending; abort or SDK shutdown rejects it and removes the pending state.
+
+When the composition provides `approval`, the server advertises `approvalResponses` and forwards pending requests from SDK-owned roots and descendants. The host returns one explicit decision through `approval/respond`; cancellation and shutdown reject pending approvals. Addressed continuable-child controls use the native subagent service and advertise `subagentControl`. The server validates persisted root ancestry and the direct parent before admitting a prompt or requesting interruption. See the [protocol](../protocol/README.md) for wire fields and retry limits.
 
 ## Summary
 

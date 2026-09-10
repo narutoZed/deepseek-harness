@@ -237,6 +237,45 @@ class HarnessClient:
         )
         return response.accepted
 
+    def is_session_live(self, root_session_id: str, session_id: str) -> bool:
+        """Read live registry membership under one SDK root without resuming a session."""
+        result = self.request("session/is-live", {"rootSessionId": root_session_id,
+                                                "sessionId": session_id},
+                              response_model=_SessionLiveResponse)
+        return result.live
+
+    def respond_approval(self, session_id: str, interaction_id: str, decision: str) -> bool:
+        """Answer one pending permission request; only approved grants the action once."""
+        response = self.request(
+            "approval/respond", {"sessionId": session_id, "interactionId": interaction_id,
+                                 "decision": decision}, response_model=_InteractionRespondResponse,
+        )
+        return response.accepted
+
+    def subagent_prompt(
+        self, root_session_id: str, parent_session_id: str, child_session_id: str,
+        content: list[JsonObject], *, request_id: str, client_time_zone: str | None = None,
+        notification_subscription: "NotificationSubscription | None" = None,
+    ) -> JsonObject:
+        """Queue a continuable child message under an authorized SDK root."""
+        params: JsonObject = {"rootSessionId": root_session_id, "parentSessionId": parent_session_id,
+                              "childSessionId": child_session_id, "requestId": request_id,
+                              "content": content}
+        if client_time_zone is not None:
+            params["clientTimeZone"] = client_time_zone
+        return self.request("subagent/prompt", params, response_model=_SubagentPromptResponse,
+                            notification_subscription=notification_subscription).model_dump()
+
+    def interrupt_subagent(
+        self, root_session_id: str, parent_session_id: str, child_session_id: str,
+    ) -> bool:
+        """Signal only the addressed child; an acknowledgement does not imply quiescence."""
+        response = self.request("subagent/interrupt", {
+            "rootSessionId": root_session_id, "parentSessionId": parent_session_id,
+            "childSessionId": child_session_id,
+        }, response_model=_InteractionRespondResponse)
+        return response.accepted
+
     def request(
         self,
         method: str,
@@ -609,8 +648,18 @@ class NotificationSubscription:
         self._closed = True
         self._client._unsubscribe_notifications(self._subscription_id)
 
-    def next(self) -> Notification:
-        item = self._notifications.get()
+    @property
+    def pending_count(self) -> int:
+        """Queued or delivered-but-unacknowledged notifications for this subscription."""
+        return self._notifications.unfinished_tasks
+
+    def acknowledge(self) -> None:
+        """Mark one delivered notification processed for pending_count accounting."""
+        self._notifications.task_done()
+
+    def next(self, timeout_seconds: float | None = None) -> Notification:
+        """Read one notification; a bounded wait raises queue.Empty when none arrives."""
+        item = self._notifications.get(timeout=timeout_seconds)
         if isinstance(item, BaseException):
             raise item
         return item
@@ -652,3 +701,12 @@ class _SessionExportResponse(BaseModel):
 class _SessionForkResponse(BaseModel):
     sessionId: str
     events: list[dict[str, object]]
+
+
+class _SubagentPromptResponse(BaseModel):
+    messageId: str
+    replayed: bool
+
+
+class _SessionLiveResponse(BaseModel):
+    live: bool

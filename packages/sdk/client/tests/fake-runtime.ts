@@ -231,6 +231,16 @@ reader.on('line', (line) => {
       if (env.FAKE_RECORD_STEER !== undefined) writeFileSync(env.FAKE_RECORD_STEER, JSON.stringify(frame.params))
       respond(env.FAKE_MALFORMED_STEER === undefined ? { messageId: 'steer-message' } : {})
       return
+    case 'approval/respond':
+    case 'subagent/prompt':
+    case 'subagent/interrupt':
+    case 'session/is-live':
+      if (env.FAKE_RECORD_CONTROL !== undefined) writeFileSync(env.FAKE_RECORD_CONTROL, JSON.stringify(frame))
+      respond(env.FAKE_CONTROL_RESPONSE === undefined
+        ? frame.method === 'subagent/prompt' ? { messageId: 'child-message', replayed: false }
+          : frame.method === 'session/is-live' ? { live: true } : { accepted: true }
+        : JSON.parse(env.FAKE_CONTROL_RESPONSE) as object)
+      return
     case 'interaction/respond':
       respond(env.FAKE_MALFORMED_INTERACTION === undefined
         ? { accepted: frame.params?.interactionId === 'question-1' && Array.isArray(frame.params.answers) }
@@ -271,6 +281,8 @@ reader.on('line', (line) => {
         serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' },
         ...env.FAKE_MALFORMED_CAPABILITIES !== undefined ? {
           capabilities: env.FAKE_MALFORMED_CAPABILITIES === 'container' ? 'invalid' : { sessionTreeSettled: 'yes' },
+        } : env.FAKE_CONTROL_CAPABILITIES !== undefined ? {
+          capabilities: { approvalResponses: true, subagentControl: true, sessionTreeSettled: true },
         } : env.FAKE_TREE_SETTLEMENT === undefined ? {} : {
           capabilities: { sessionTreeSettled: env.FAKE_TREE_SETTLEMENT === '1' },
         },

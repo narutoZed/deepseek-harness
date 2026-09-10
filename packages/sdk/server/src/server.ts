@@ -21,12 +21,17 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentPrepareInfo, SubagentRunEndInfo, SubagentRunInfo } from '@deepseek-ai/dsh-subagent'
 import { SdkSessionSettlement } from './session-settlement.ts'
+import { SdkApprovals } from './approvals.ts'
+import { SdkSubagentControl } from './subagent-control.ts'
 import type {
   AskUserQuestionAnswer,
   AskUserQuestionRequest,
 } from '@deepseek-ai/dsh-user-questions'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import type {
+  ApprovalRespondParams,
+  SdkSubagentPromptParams,
+  SdkSubagentInterruptParams,
   InitializeParams,
   InitializeResult,
   InteractionRequestNotification,
@@ -102,6 +107,8 @@ function successStatus(reason: string, options: HarnessSdkJsonRpcServerOptions):
  */
 export class HarnessSdkJsonRpcServer {
   private readonly settlement: SdkSessionSettlement
+  private readonly approvals: SdkApprovals
+  private readonly subagentControl: SdkSubagentControl
   private cwd = process.cwd()
   private provider = 'deepseek-official'
   private model = 'deepseek-official'
@@ -126,6 +133,13 @@ export class HarnessSdkJsonRpcServer {
       const payload: SessionSettledNotification = { sessionId }
       this.transport.notify('session.settled', payload)
     })
+    this.approvals = new SdkApprovals(ctx, transport, agent => this.ownsAgent(agent))
+    this.subagentControl = new SdkSubagentControl(ctx, async (id) => {
+      if (!this.initialized || this.shuttingDown) throw new Error('SDK server is not active')
+      const rec = await this.getOrCreateSession(id)
+      this.assertLiveAgent(rec, id)
+      return rec.handle.agent
+    }, this.settlement)
     const settlement = this.settlement
     const serverOptions = this.options
     this.disposers.push(ctx.on('session/event', (session, event) => {
@@ -254,7 +268,8 @@ export class HarnessSdkJsonRpcServer {
     this.initialized = true
     return {
       serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' },
-      capabilities: { sessionTreeSettled: true },
+      capabilities: { sessionTreeSettled: true, approvalResponses: this.ctx.get('approval') !== undefined,
+        subagentControl: this.ctx.get('subagents') !== undefined },
     }
   }
 
@@ -401,6 +416,12 @@ export class HarnessSdkJsonRpcServer {
     }
   }
 
+  private ownsAgent(agent: Agent): boolean {
+    if (!this.initialized || this.shuttingDown || this.ctx.agents.get(agent.id) !== agent) return false
+    return [...this.sessions.keys()].some(root => this.settlement.belongsTo(String(agent.session.id), root))
+  }
+
+
   private assertLiveAgent(rec: SessionRecord, sessionId: string): void {
     if (this.ctx.agents.get(rec.handle.agent.id) !== rec.handle.agent) {
       throw new Error(`session agent was disposed outside the server: ${sessionId}`)
@@ -419,14 +440,16 @@ export class HarnessSdkJsonRpcServer {
 
   private async performShutdown(): Promise<Record<string, never>> {
     this.shuttingDown = true
+    const failures: unknown[] = []
     this.settlement.close()
+    try { this.approvals.close() } catch (error) { failures.push(error) }
+    try { await this.subagentControl.close() } catch (error) { failures.push(error) }
     const pendingCreations = [...this.sessionCreations.values()]
     await Promise.allSettled(pendingCreations)
     this.sessionCreations.clear()
     const records = [...this.sessions.values()]
     this.sessions.clear()
     this.steers.clear()
-    const failures: unknown[] = []
     for (const pending of this.pendingInteractions.values()) {
       pending.removeAbortListener()
       pending.reject(new Error('SDK server is shutting down'))
@@ -471,6 +494,19 @@ export class HarnessSdkJsonRpcServer {
         return this.exportSession(params as unknown as SessionExportParams)
       case 'session/fork':
         return this.forkSession(params as unknown as SessionForkParams)
+      case 'session/is-live': {
+        const root = params?.rootSessionId
+        const id = params?.sessionId
+        if (typeof root !== 'string' || typeof id !== 'string' || !root || !id) throw new TypeError('session/is-live requires rootSessionId and sessionId')
+        return { live: this.sessions.has(root) && this.settlement.belongsTo(id, root)
+          && this.ctx.agents.get(brandString<SessionId>(id)) !== undefined }
+      }
+      case 'approval/respond':
+        return this.approvals.respond(params as unknown as ApprovalRespondParams)
+      case 'subagent/prompt':
+        return this.subagentControl.prompt(params as unknown as SdkSubagentPromptParams)
+      case 'subagent/interrupt':
+        return this.subagentControl.interrupt(params as unknown as SdkSubagentInterruptParams)
       case 'interaction/respond':
         return this.respondInteraction(params as unknown as InteractionRespondParams)
       case 'shutdown':

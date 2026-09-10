@@ -42,22 +42,39 @@ Use this package when you build or debug an SDK wire end — the serving plugin,
 
 `session/prompt` accepts optional `requestId` for correlation. Both operations retain it as `source.rpcId`. These identities do not provide cross-process retry recovery.
 
+### Approval and descendant control
+
+`initialize` advertises optional `approvalResponses` and `subagentControl` booleans. `approval.request` carries `sessionId`, `interactionId`, `toolName`, optional `callId` and `reason`. `approval/respond` requires the same session and interaction plus `decision: "approved" | "cancelled"`; approval grants one operation, cancellation rejects it. `approval.resolved` reports `allowed-once`, `rejected` or `cancelled`. An expired or already consumed question rejects with `data.code: "interaction_expired"`.
+
+`subagent/prompt` takes `rootSessionId`, direct `parentSessionId`, `childSessionId`, `requestId`, durable `content` and optional `clientTimeZone`; it returns `{ messageId, replayed }`. Identical retries reuse admission in the same process; different content under that request id rejects. `subagent/interrupt` takes the three session ids and returns `{ accepted: true }` after requesting cancellation of that child’s current turn. Both require a continuable child recorded beneath that root. The direct parent must be live; an SDK root can be reopened from persistence, and the native service resumes its cold continuable child. Other descendants and the parent keep running. `session/is-live` checks `{ rootSessionId, sessionId }` without opening an agent.
+
+The trusted host authorizes external users and retains complete session addresses. The server validates native ancestry but does not authenticate JSON-RPC peers. Durable cross-process request deduplication belongs to the host; a new runtime does not retain earlier request receipts.
+
 ### Framing and transport
 
-Wire one JSON-RPC 2.0 message per `\n`-terminated line over byte streams you own. A frame with both `id` and `method` is a request, `id` alone is a response, and `method` alone is a notification; malformed lines are ignored. Requests with no registered handler answer `-32601`, handler failures answer `-32603`, and error responses reject the pending request with `JsonRpcResponseError`, which preserves the wire `code` and optional `data`. `start()` attaches stream listeners and `close()` detaches them and rejects pending requests without destroying the streams.
+Wire one JSON-RPC 2.0 message per `\n`-terminated line over byte streams you own. A frame with both `id` and `method` is a request, `id` alone is a response, and `method` alone is a notification; malformed lines are ignored. Requests with no registered handler answer `-32601`, ordinary handler failures answer `-32603`, explicit `JsonRpcResponseError` failures preserve their code and data, and error responses reject the pending request with `JsonRpcResponseError`, which preserves the wire `code` and optional `data`. `start()` attaches stream listeners and `close()` detaches them and rejects pending requests without destroying the streams.
 
 ### The SDK methods
 
-Both wire ends share one method set: four client-to-server requests and six server-to-client notifications.
+Both wire ends share the following methods.
 
 | Direction | Method | Payload types |
 |---|---|---|
 | client→server | `initialize` | `InitializeParams` → `InitializeResult` |
 | client→server | `session/prompt` | `SessionPromptParams` → `SessionPromptResult` (durable enqueue receipt) |
 | client→server | `interaction/respond` | `InteractionRespondParams` → `InteractionRespondResult` |
+| client→server | `session/steer` | `SessionSteerParams` → `SessionPromptResult` |
+| client→server | `session/export` | `SessionExportParams` → `SessionForkSnapshot` |
+| client→server | `session/fork` | `SessionForkParams` → `SessionForkResult` |
+| client→server | `session/is-live` | `{ rootSessionId, sessionId }` → `{ live }` |
+| client→server | `approval/respond` | `ApprovalRespondParams` → `InteractionRespondResult` |
+| client→server | `subagent/prompt` | `SdkSubagentPromptParams` → `SdkSubagentPromptResult` |
+| client→server | `subagent/interrupt` | `SdkSubagentInterruptParams` → `InteractionRespondResult` |
 | client→server | `shutdown` | no params → `{}` |
 | server→client | `session.event` | `SessionEventNotification` (every session in the runtime, unfiltered) |
 | server→client | `interaction.request` | `InteractionRequestNotification` |
+| server→client | `approval.request` | `ApprovalRequestNotification` |
+| server→client | `approval.resolved` | `ApprovalResolvedNotification` |
 | server→client | `session.status` | `SessionStatusNotification` (whole-agent `running`/`idle` transition) |
 | server→client | `session.settled` | `SessionSettledNotification` (negotiated root activity completion) |
 | server→client | `session.assistant_stream` | `SessionAssistantStreamNotification` (live assistant stream frame) |
@@ -130,8 +147,8 @@ None; this package neither assembles nor sends a provider request.
 These limits define what the protocol does not cover or promise. They are current package constraints, not a comparison with other wire formats or a task backlog.
 
 - **No protocol-version negotiation** — the handshake carries only `serverInfo.version` (`0.0.1`, unvalidated by clients); pre-release stance, no compatibility promise.
-- **No cancel or session-close methods** — a client abandons a turn by closing the runtime process; see the [JSON-RPC serving plugin](../server/README.md).
-- **Server→client requests are a dead capability** — the transport supports them, but the server never sends one; the Python SDK's responder surface exists for future approval flows.
+- **No root-cancel or session-close methods** — a client abandons root execution by closing the runtime process; see the [JSON-RPC serving plugin](../server/README.md).
+- **Server→client requests are a dead capability** — the transport supports them, but the server never sends one; approval uses notifications and client-to-server replies.
 
 <a id="dev-note"></a>
 ### Dev Note
