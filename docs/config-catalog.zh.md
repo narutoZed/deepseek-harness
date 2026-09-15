@@ -1843,12 +1843,14 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /** Existing absolute directories writable in workspace-write mode; configured by the deployment. */
+  additionalWritableRoots?: string[]
 }
 ```
 
 依赖：[`SandboxMode`](subsystems/sandbox.zh.md)
 
-来源：[`packages/sandbox/sandbox-policy/src/index.ts:70`](../packages/sandbox/sandbox-policy/src/index.ts)
+来源：[`packages/sandbox/sandbox-policy/src/index.ts:74`](../packages/sandbox/sandbox-policy/src/index.ts)
 
 <a id="deepseek-aidsh-sdk-app"></a>
 
@@ -2444,7 +2446,7 @@ export interface Config {
 export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[number]
 ```
 
-来源：[`packages/subagent/subagent-claude-code/src/index.ts:38`](../packages/subagent/subagent-claude-code/src/index.ts)
+来源：[`packages/subagent/subagent-claude-code/src/index.ts:39`](../packages/subagent/subagent-claude-code/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-codex"></a>
 
@@ -2477,7 +2479,7 @@ export type CodexPermissionMode =
   | 'dangerously-bypass-approvals-and-sandbox'
 ```
 
-来源：[`packages/subagent/subagent-codex/src/index.ts:36`](../packages/subagent/subagent-codex/src/index.ts)
+来源：[`packages/subagent/subagent-codex/src/index.ts:37`](../packages/subagent/subagent-codex/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-dsh-sdk"></a>
 

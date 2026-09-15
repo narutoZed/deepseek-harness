@@ -58,6 +58,22 @@ function target(path: string): Promise<FsTarget> {
 }
 
 describe('the capability fact', () => {
+  it('writes and edits an authorized cache, then rejects the same directory after revocation', async () => {
+    await boot('workspace-write')
+    const path = join(outside, 'cache-entry.txt')
+    await expect(fs.writeText(await target(path), 'initial')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    const revoke = ctx.sandboxPolicy.registerWritableRoots([outside])
+    try {
+      await fs.writeText(await target(path), 'initial')
+      await fs.editText(await target(path), { oldString: 'initial', newString: 'updated', replaceAll: false })
+      expect(await readFile(path, 'utf8')).toBe('updated')
+    } finally {
+      revoke()
+    }
+    await expect(fs.writeText(await target(path), 'denied')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    expect(await readFile(path, 'utf8')).toBe('updated')
+  })
+
   it('reports the deployment default mode (what the tool layer advertises against)', async () => {
     await boot('workspace-write')
     expect(fs.sandboxMode).toBe('workspace-write')

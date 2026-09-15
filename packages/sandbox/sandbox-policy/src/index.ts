@@ -20,7 +20,8 @@
  * @module @deepseek-ai/dsh-sandbox-policy
  */
 
-import { resolve as resolvePath } from 'node:path'
+import { realpathSync, statSync } from 'node:fs'
+import { isAbsolute, parse, resolve as resolvePath } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { z as zod } from 'zod'
 import z from '@deepseek-ai/schemastery'
@@ -44,6 +45,9 @@ function renderPolicyContext(policy: SandboxExecutionPolicy): string {
       return 'Current file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.'
     case 'workspace-write':
       return `Current file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}.`
+        + (policy.additionalWritableRoots?.length
+          ? ` Additional writable directories: ${JSON.stringify(policy.additionalWritableRoots)}. Other paths retain their existing restrictions.`
+          : '')
     case 'danger-full-access':
       return 'Current file policy: danger-full-access. The file sandbox does not restrict file modifications by available operations.'
     /* v8 ignore next 4 -- SandboxMode is a typed same-process closed union; this branch is only the static exhaustiveness guard. */
@@ -75,6 +79,8 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /** Existing absolute directories writable in workspace-write mode; configured by the deployment. */
+  additionalWritableRoots?: string[]
 }
 
 /** Inputs that select the sandbox policy for one capability call. */
@@ -113,6 +119,7 @@ export class SandboxPolicyService extends Service {
     // No schema default: process.cwd() is resolved in the constructor so the
     // stored root is always absolute regardless of how it was supplied.
     workspaceRoot: z.string(),
+    additionalWritableRoots: z.array(z.string()).default([]),
   })
 
   static inject = ['sessionProjections']
@@ -121,6 +128,7 @@ export class SandboxPolicyService extends Service {
   readonly defaultMode: SandboxMode
   /** The absolute `workspace-write` fallback root for calls without a session cwd. */
   readonly workspaceRoot: string
+  private readonly rootGrants = new Set<readonly string[]>()
   constructor(ctx: Context, config: Config) {
     super(ctx, 'sandboxPolicy')
     // schemastery (static Config) already filled `mode`; the cast records that
@@ -128,6 +136,7 @@ export class SandboxPolicyService extends Service {
     // the process cwd is real branching, resolved absolute either way.
     this.defaultMode = config.mode as SandboxMode
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
+    ctx.effect(() => this.registerWritableRoots(config.additionalWritableRoots ?? []))
 
     ctx.sessionProjections.register({
       key: 'sandboxMode',
@@ -162,11 +171,34 @@ export class SandboxPolicyService extends Service {
    */
   resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy {
     const { session } = request
+    const mode = request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode
+    const roots = [...new Set([...this.rootGrants].flat())].sort()
     return {
-      mode: request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode,
+      mode,
       workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
+      ...roots.length > 0 ? { additionalWritableRoots: roots } : {},
       ...session === undefined ? {} : { sessionId: session.id },
     }
+  }
+
+  /**
+   * Authorize deployment-owned directories without changing the session's mode.
+   * Register through the contributing plugin's effect so disposal revokes its grant.
+   * Callers must keep these roots and their ancestors outside model-controlled renames.
+   * @param roots - existing absolute directory paths from trusted plugin configuration.
+   * @returns disposer revoking this registration; throws for missing directories or filesystem roots.
+   */
+  registerWritableRoots(roots: readonly string[]): () => void {
+    const grant = Object.freeze(roots.map((root) => {
+      if (!isAbsolute(root)) throw new Error(`Additional writable directory must be absolute: ${root}`)
+      const canonical = realpathSync.native(root)
+      if (parse(canonical).root === canonical || !statSync(canonical).isDirectory()) {
+        throw new Error(`Additional writable path must be a directory below the filesystem root: ${root}`)
+      }
+      return canonical
+    }))
+    this.rootGrants.add(grant)
+    return () => { this.rootGrants.delete(grant) }
   }
 
   /**

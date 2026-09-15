@@ -57,6 +57,8 @@ kind: "package-reference"
 
 无效的配置模式会在插件加载时被拒绝，因此拼写错误会大声失败，而不是静默改变策略。没有 cwd 的会话与无 agent 调用回退到配置的工作区根目录；带已批准显式模式的调用只在该次调用中使用该模式。
 
+部署缓存目录通过 `additionalWritableRoots` 配置，它是可选的现有绝对目录列表。可信插件也可使用 `ctx.effect(() => ctx.sandboxPolicy.registerWritableRoots(paths))` 注册授权；释放 effect 会撤销该次注册。目录及其祖先必须保持在模型可重命名的范围之外。授权目录随解析后的策略返回，仅在 `workspace-write` 下允许写入，并出现在该模式已记录的模型上下文中。缺失路径、相对路径和文件系统根目录会被拒绝。
+
 -----
 
 <a id="understand-the-implementation"></a>

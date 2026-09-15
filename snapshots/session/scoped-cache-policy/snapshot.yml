@@ -1,0 +1,16 @@
+version: 1
+scenario: scoped-cache-policy
+profile: headless
+composition: scoped-cache-policy
+recording: authored
+header:
+  class: scoped-cache-policy
+  pin: true
+  systemPromptSource: text-turn
+  toolSchemasSource: text-turn
+replay:
+  override: true
+permission: workspace-write
+workspace:
+  final: true
+  parent: outside-temp

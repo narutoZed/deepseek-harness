@@ -4,7 +4,7 @@
  * deriving from `writableRoots` — cannot drift.
  */
 
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -29,6 +29,24 @@ describe('canonicalPath', () => {
 })
 
 describe('writableRoots', () => {
+  it.skipIf(process.platform === 'win32')('rejects a replaced directory instead of following its new symlink target', () => {
+    const base = mkdtempSync(join(tmpdir(), 'dsh-root-identity-'))
+    roots.push(base)
+    const cache = join(realpathSync.native(base), 'cache')
+    const target = join(realpathSync.native(base), 'target')
+    mkdirSync(cache)
+    mkdirSync(target)
+    const policy = { mode: 'workspace-write' as const, workspaceRoot: '/workspace', additionalWritableRoots: [cache] }
+    expect(writableRoots(policy)).toContain(cache)
+    rmSync(cache, { recursive: true })
+    symlinkSync(target, cache, 'dir')
+    expect(() => writableRoots(policy)).toThrow('changed its filesystem identity')
+  })
+  it('includes explicit cache roots only in workspace-write', () => {
+    const policy = { workspaceRoot: '/workspace', additionalWritableRoots: ['/cache/uv'] }
+    expect(writableRoots({ ...policy, mode: 'workspace-write' })).toContain('/cache/uv')
+    expect(writableRoots({ ...policy, mode: 'read-only' })).toEqual([])
+  })
   it('read-only grants nothing', () => {
     expect(writableRoots({ mode: 'read-only', workspaceRoot: process.cwd() })).toEqual([])
   })

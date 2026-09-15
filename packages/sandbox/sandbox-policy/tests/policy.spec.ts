@@ -43,6 +43,32 @@ async function policyContext(ctx: Context, activeSession: Session): Promise<stri
 }
 
 describe('SandboxPolicyService', () => {
+  it('grants deployment directories only in workspace-write and revokes disposed contributions', async () => {
+    const cache = mkdtempSync(join(tmpdir(), 'dsh-policy-cache-'))
+    const ctx = await mounted({ mode: 'workspace-write' })
+    try {
+      const revoke = ctx.sandboxPolicy.registerWritableRoots([cache, cache])
+      expect(ctx.sandboxPolicy.resolve().additionalWritableRoots).toEqual([realpathSync.native(cache)])
+      expect(ctx.sandboxPolicy.resolve({ mode: 'read-only' }).mode).toBe('read-only')
+      revoke()
+      expect(ctx.sandboxPolicy.resolve().additionalWritableRoots).toBeUndefined()
+    } finally {
+      await ctx.fiber.dispose()
+      rmSync(cache, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects relative, missing and filesystem-root directory grants', async () => {
+    const ctx = await mounted()
+    try {
+      expect(() => ctx.sandboxPolicy.registerWritableRoots(['relative-cache'])).toThrow('absolute')
+      expect(() => ctx.sandboxPolicy.registerWritableRoots([resolve('/missing-dsh-cache-590acd')])).toThrow()
+      expect(() => ctx.sandboxPolicy.registerWritableRoots([resolve('/')])).toThrow('filesystem root')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('defaults to read-only under the process cwd', async () => {
     const ctx = await mounted()
     expect(ctx.sandboxPolicy.defaultMode).toBe('read-only')

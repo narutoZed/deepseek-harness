@@ -69,6 +69,8 @@ kind: "package-reference"
 
 没有后端能强制执行所请求的模式时，调用以 `SANDBOX_UNAVAILABLE` 失败，而不是不受限制地运行；错误文本会指明缺失的平台 runner。启动后失败的后端还会报告结构化的 runner 失败签名，因此损坏的沙箱可以与命令失败区分开。
 
+`SandboxExecutionPolicy.additionalWritableRoots` 在工作区之外携带部署授权的绝对目录。`writableRoots(policy)` 仅在 `workspace-write` 下将它们纳入可写范围；只读模式仍返回空列表。消费方必须将完整策略传递给提供方，不能只用模式与工作区重新构造策略。
+
 -----
 
 <a id="understand-the-implementation"></a>

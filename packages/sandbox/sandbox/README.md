@@ -69,6 +69,8 @@ When a confined call is denied, the operation reports a denial marker naming the
 
 When no backend can enforce the requested mode, the call fails with `SANDBOX_UNAVAILABLE` rather than running unconfined; the error text names the missing platform runner. A backend that fails after starting also reports a structured runner-failure signature, so a broken sandbox is distinguishable from a command failure.
 
+`SandboxExecutionPolicy.additionalWritableRoots` carries deployment-authorized absolute directories alongside the workspace. `writableRoots(policy)` includes them only for `workspace-write`; read-only still returns no writable roots. Consumers must forward the complete policy to providers rather than reconstructing it from the mode and workspace alone.
+
 -----
 
 <a id="understand-the-implementation"></a>
