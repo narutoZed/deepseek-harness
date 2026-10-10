@@ -766,3 +766,18 @@ def test_live_turn_accepts_explanation_before_acknowledgement(prefix: str) -> No
 def test_live_turn_rejects_missing_standalone_acknowledgement(answer: str) -> None:
     with pytest.raises(AssertionError, match="turn returned"):
         SMOKE["assert_live_turn"]("create", live_result(final_response=answer))
+
+
+def test_snapshot_live_frames_normalize_only_their_clock() -> None:
+    from deepseek_harness import Notification
+
+    frame = {"type": "chunk", "attemptId": "parent:1", "revision": 4, "index": 2,
+             "time": 123, "chunk": {"type": "text-delta", "text": "time=456", "time": 456}}
+    notification = Notification(method="session.assistant_stream", payload={"sessionId": "parent", "frame": frame})
+    normalized = SMOKE["snapshot_notification"](notification)
+    assert normalized == {"method": "session.assistant_stream", "payload": {
+        "sessionId": "parent", "frame": {**frame, "time": 0},
+    }}
+    assert frame["time"] == 123
+    assert SMOKE["snapshot_notification"](Notification(method="custom", payload={"frame": frame}))["payload"]["frame"]["time"] == 123
+    assert SMOKE["snapshot_notification"](Notification(method="session.assistant_stream", payload={"frame": {"type": "start"}}))["payload"] == {"frame": {"type": "start"}}

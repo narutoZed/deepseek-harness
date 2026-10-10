@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-05-mcp-request-metadata.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-mcp-request-metadata.md
+/agent-note-trusted-mcp-request-metadata:
+  en: 4e6d5cdf860962d4
+  zh: ef273d1722291964
+/agent-note-trusted-mcp-request-metadata/problem:
+  en: 6d1a9bdcb98beb54
+  zh: b4e16382943bd6cd
+/agent-note-trusted-mcp-request-metadata/decision:
+  en: eec41bf3997a8b14
+  zh: ef2d5e56d0619520
+/agent-note-trusted-mcp-request-metadata/alternatives-considered:
+  en: a4b37ab54418450f
+  zh: b29af1f4bc780ca5
+/agent-note-trusted-mcp-request-metadata/consequences:
+  en: 4fd708f1eb690eae
+  zh: ca9ce3857eb51280

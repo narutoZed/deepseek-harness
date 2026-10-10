@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, TypeAlias, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StrictBool
 
 from .errors import JsonRpcError, TransportClosedError
 from .models import IncomingRequest, InitializeResponse, JsonObject, JsonValue, Notification
@@ -174,10 +174,13 @@ class HarnessClient:
         session_id: str,
         content_blocks: list[JsonObject],
         *,
+        request_id: str | None = None,
         on_notification: Callable[[Notification], None] | None = None,
         notification_subscription: "NotificationSubscription | None" = None,
     ) -> str:
         payload: JsonObject = {"sessionId": session_id, "contentBlocks": content_blocks}
+        if request_id is not None:
+            payload["requestId"] = request_id
         response = self.request(
             "session/prompt",
             payload,
@@ -205,6 +208,91 @@ class HarnessClient:
             response_model=_WorkingDirectoryResponse,
         )
         return response.cwd
+
+    def session_export(
+        self, session_id: str, *, turn: int, max_bytes: int, ended_at: int | None = None,
+    ) -> JsonObject:
+        """Read a portable completed-turn seed, including bounded attachment bytes."""
+        response = self.request(
+            "session/export", {"sessionId": session_id, "turn": turn, "maxBytes": max_bytes,
+                               **({"endedAt": ended_at} if ended_at is not None else {})},
+            response_model=_SessionExportResponse,
+        )
+        return response.model_dump(exclude_none=True)
+
+    def session_fork(self, session_id: str, snapshot: JsonObject, *, max_bytes: int) -> JsonObject:
+        """Create an independent seeded session in this runtime's home."""
+        response = self.request(
+            "session/fork", {"sessionId": session_id, "snapshot": snapshot, "maxBytes": max_bytes},
+            response_model=_SessionForkResponse,
+        )
+        return response.model_dump()
+
+    def session_steer(
+        self,
+        session_id: str,
+        content_blocks: list[JsonObject],
+        *,
+        request_id: str,
+    ) -> str:
+        """Insert input at the next step of a running session; retries reuse request_id."""
+        response = self.request(
+            "session/steer",
+            {"sessionId": session_id, "contentBlocks": content_blocks, "requestId": request_id},
+            response_model=_SessionPromptResponse,
+        )
+        return response.messageId
+
+    def respond_interaction(
+        self,
+        interaction_id: str,
+        answers: list[JsonObject],
+    ) -> bool:
+        response = self.request(
+            "interaction/respond",
+            {"interactionId": interaction_id, "answers": answers},
+            response_model=_InteractionRespondResponse,
+        )
+        return response.accepted
+
+    def is_session_live(self, root_session_id: str, session_id: str) -> bool:
+        """Read live registry membership under one SDK root without resuming a session."""
+        result = self.request("session/is-live", {"rootSessionId": root_session_id,
+                                                "sessionId": session_id},
+                              response_model=_SessionLiveResponse)
+        return result.live
+
+    def respond_approval(self, session_id: str, interaction_id: str, decision: str) -> bool:
+        """Answer one pending permission request; only approved grants the action once."""
+        response = self.request(
+            "approval/respond", {"sessionId": session_id, "interactionId": interaction_id,
+                                 "decision": decision}, response_model=_InteractionRespondResponse,
+        )
+        return response.accepted
+
+    def subagent_prompt(
+        self, root_session_id: str, parent_session_id: str, child_session_id: str,
+        content: list[JsonObject], *, request_id: str, client_time_zone: str | None = None,
+        notification_subscription: "NotificationSubscription | None" = None,
+    ) -> JsonObject:
+        """Queue a continuable child message under an authorized SDK root."""
+        params: JsonObject = {"rootSessionId": root_session_id, "parentSessionId": parent_session_id,
+                              "childSessionId": child_session_id, "requestId": request_id,
+                              "content": content}
+        if client_time_zone is not None:
+            params["clientTimeZone"] = client_time_zone
+        return self.request("subagent/prompt", params, response_model=_SubagentPromptResponse,
+                            notification_subscription=notification_subscription).model_dump()
+
+    def interrupt_subagent(
+        self, root_session_id: str, parent_session_id: str, child_session_id: str,
+    ) -> bool:
+        """Signal only the addressed child; an acknowledgement does not imply quiescence."""
+        response = self.request("subagent/interrupt", {
+            "rootSessionId": root_session_id, "parentSessionId": parent_session_id,
+            "childSessionId": child_session_id,
+        }, response_model=_InteractionRespondResponse)
+        return response.accepted
 
     def request(
         self,
@@ -578,8 +666,18 @@ class NotificationSubscription:
         self._closed = True
         self._client._unsubscribe_notifications(self._subscription_id)
 
-    def next(self) -> Notification:
-        item = self._notifications.get()
+    @property
+    def pending_count(self) -> int:
+        """Queued or delivered-but-unacknowledged notifications for this subscription."""
+        return self._notifications.unfinished_tasks
+
+    def acknowledge(self) -> None:
+        """Mark one delivered notification processed for pending_count accounting."""
+        self._notifications.task_done()
+
+    def next(self, timeout_seconds: float | None = None) -> Notification:
+        """Read one notification; a bounded wait raises queue.Empty when none arrives."""
+        item = self._notifications.get(timeout=timeout_seconds)
         if isinstance(item, BaseException):
             raise item
         return item
@@ -603,9 +701,34 @@ class _WorkingDirectoryResponse(BaseModel):
     cwd: str
 
 
+class _InteractionRespondResponse(BaseModel):
+    accepted: StrictBool
+
+
 class _ShutdownResponse(BaseModel):
     pass
 
 
 def _int_or_none(value: object) -> int | None:
     return value if isinstance(value, int) else None
+
+
+class _SessionExportResponse(BaseModel):
+    sourceSessionId: str
+    cwd: str | None = None
+    events: list[dict[str, object]]
+    resources: list[dict[str, object]]
+
+
+class _SessionForkResponse(BaseModel):
+    sessionId: str
+    events: list[dict[str, object]]
+
+
+class _SubagentPromptResponse(BaseModel):
+    messageId: str = Field(min_length=1)
+    replayed: StrictBool
+
+
+class _SessionLiveResponse(BaseModel):
+    live: StrictBool

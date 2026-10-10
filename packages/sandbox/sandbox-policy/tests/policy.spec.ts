@@ -4,7 +4,7 @@
  * override kit (fold + write path) every enforcing capability reads.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -43,6 +43,32 @@ async function policyContext(ctx: Context, activeSession: Session): Promise<stri
 }
 
 describe('SandboxPolicyService', () => {
+  it('grants deployment directories only in workspace-write and revokes disposed contributions', async () => {
+    const cache = mkdtempSync(join(tmpdir(), 'dsh-policy-cache-'))
+    const ctx = await mounted({ mode: 'workspace-write' })
+    try {
+      const revoke = ctx.sandboxPolicy.registerWritableRoots([cache, cache])
+      expect(ctx.sandboxPolicy.resolve().additionalWritableRoots).toEqual([realpathSync.native(cache)])
+      expect(ctx.sandboxPolicy.resolve({ mode: 'read-only' }).mode).toBe('read-only')
+      revoke()
+      expect(ctx.sandboxPolicy.resolve().additionalWritableRoots).toBeUndefined()
+    } finally {
+      await ctx.fiber.dispose()
+      rmSync(cache, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects relative, missing and filesystem-root directory grants', async () => {
+    const ctx = await mounted()
+    try {
+      expect(() => ctx.sandboxPolicy.registerWritableRoots(['relative-cache'])).toThrow('absolute')
+      expect(() => ctx.sandboxPolicy.registerWritableRoots([resolve('/missing-dsh-cache-590acd')])).toThrow()
+      expect(() => ctx.sandboxPolicy.registerWritableRoots([resolve('/')])).toThrow('filesystem root')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('defaults to read-only under the process cwd', async () => {
     const ctx = await mounted()
     expect(ctx.sandboxPolicy.defaultMode).toBe('read-only')
@@ -173,9 +199,9 @@ describe('sandbox:policy request context', () => {
     const ctx = await promptMounted({ mode, workspaceRoot: '/fallback' })
     const workspaceRoot = '/projects/../projects/current'
     const expected = {
-      'read-only': 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.',
-      'workspace-write': `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(workspaceRoot)}. Some platform temporary areas may also be writable.`,
-      'danger-full-access': 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.',
+      'read-only': 'Current file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.',
+      'workspace-write': `Current file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(workspaceRoot)}. Some platform temporary areas may also be writable.`,
+      'danger-full-access': 'Current file policy: danger-full-access. The file sandbox does not restrict file modifications by available operations.',
     } as const
 
     expect(await policyContext(ctx, session(`sess-${mode}`, '/projects/../projects/current'))).toBe(expected[mode])
@@ -209,11 +235,11 @@ describe('sandbox:policy request context', () => {
 
     setSandboxMode(active, 'danger-full-access')
     const danger = await policyContext(ctx, active)
-    expect(danger).toBe('Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.')
+    expect(danger).toBe('Current file policy: danger-full-access. The file sandbox does not restrict file modifications by available operations.')
     expect(await policyContext(ctx, active)).toBe(danger)
 
     setSandboxMode(active, 'workspace-write')
-    expect(await policyContext(ctx, active)).toBe(`Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify('/projects/current')}. Some platform temporary areas may also be writable.`)
+    expect(await policyContext(ctx, active)).toBe(`Current file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify('/projects/current')}. Some platform temporary areas may also be writable.`)
   })
 
   it('reconstructs resumed policy from the session log and omits diagnostics without an agent', async () => {

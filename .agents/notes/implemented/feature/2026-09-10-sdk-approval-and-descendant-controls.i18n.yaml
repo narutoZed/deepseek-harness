@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-10-sdk-approval-and-descendant-controls.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-sdk-approval-and-descendant-controls.md
+/agent-note-sdk-approval-and-descendant-controls:
+  en: 5a30ba65254ce262
+  zh: 10b0306c47b03e21
+/agent-note-sdk-approval-and-descendant-controls/problem:
+  en: 4d2e4256f87a13ea
+  zh: 409ffbaa416d5868
+/agent-note-sdk-approval-and-descendant-controls/decision:
+  en: 40f8f8d60538d329
+  zh: 47f0b23a1484bf0f
+/agent-note-sdk-approval-and-descendant-controls/alternatives-considered:
+  en: 10449260c087b12a
+  zh: bc225cffdd3e24db
+/agent-note-sdk-approval-and-descendant-controls/consequences:
+  en: e62e682c39d7013e
+  zh: a6846f4bbeb767f7

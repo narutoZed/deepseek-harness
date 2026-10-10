@@ -334,6 +334,9 @@ export class LocalSandboxProvider extends SandboxProvider {
       })
     }
     const selected = this.selectRunner(policy.mode)
+    if (policy.mode === 'workspace-write' && policy.additionalWritableRoots?.length && selected.enforcement === 'partial') {
+      throw new SandboxUnavailableError(policy.mode, 'Additional writable directories require a fully enforcing backend; enable Bubblewrap or upgrade the Landlock kernel and launcher')
+    }
     const runnerArgv = this.runnerArgv(selected.runner, policy)
     return Promise.resolve<ConfinedArgv>({
       argv: [...runnerArgv, '--', ...argv],

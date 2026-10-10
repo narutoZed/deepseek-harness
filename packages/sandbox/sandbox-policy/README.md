@@ -57,6 +57,8 @@ A session's mode can be switched at runtime through a UI policy control or an ex
 
 An invalid configured mode is rejected when the plugin loads, so a typo fails loud instead of silently changing policy. A session without a cwd, and agentless calls, fall back to the configured workspace root; a call with an approved explicit mode uses that mode for exactly that call.
 
+Deployment cache directories are configured with `additionalWritableRoots`, an optional list of existing absolute directories. Trusted plugins may register the same grants through `ctx.effect(() => ctx.sandboxPolicy.registerWritableRoots(paths))`; disposing the effect revokes that registration. The roots and their ancestors must remain outside model-controlled renames. Grants are reported in the resolved policy, authorize writes only under `workspace-write`, and appear in its logged model context. Missing paths, relative paths and filesystem roots are rejected.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -113,19 +115,19 @@ One `sandbox:policy` contribution in the current runtime-context snapshot for ev
 ##### Read-only
 
 ```markdown
-Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.
+Current file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.
 ```
 
 ##### Workspace-write
 
 ```markdown
-Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: "<workspace root>". Some platform temporary areas may also be writable.
+Current file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: "<workspace root>".
 ```
 
 ##### Danger-full-access
 
 ```markdown
-Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.
+Current file policy: danger-full-access. The file sandbox does not restrict file modifications by available operations.
 ```
 
 #### Token effect

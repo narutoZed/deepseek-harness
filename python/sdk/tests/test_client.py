@@ -391,7 +391,7 @@ for line in sys.stdin:
         print(json.dumps({"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": root, "event": {"type": "agent/inbox/spliced", "data": {"target": "next-turn", "start": 0, "inserted": [{"id": "message-1"}]}}}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "method": "session.status", "params": {"sessionId": root, "status": "running"}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"messageId": "message-1"}}), flush=True)
-        print(json.dumps({"jsonrpc": "2.0", "method": "subagent.started", "params": {"parentSessionId": root, "childSessionId": "child"}}), flush=True)
+        print(json.dumps({"jsonrpc": "2.0", "method": "subagent.started", "params": {"parentSessionId": root, "childSessionId": "child", "label": "Inspect runtime", "mode": "continuable", "provider": "spawn"}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "child", "event": {"type": "assistant/message", "data": {"content": [{"type": "text", "text": "child response"}]}}}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "method": "subagent.started", "params": {"parentSessionId": "child", "childSessionId": "grandchild"}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "grandchild", "event": {"type": "assistant/message", "data": {"content": [{"type": "text", "text": "grandchild response"}]}}}}), flush=True)
@@ -433,6 +433,10 @@ for line in sys.stdin:
     ]
     assert seen == [notification.method for notification in result.notifications]
 
+
+    started = next(n for n in result.notifications if n.method == "subagent.started")
+    assert started.payload["label"] == "Inspect runtime"
+    assert started.payload["mode"] == "continuable"
 
 def test_session_run_ignores_notifications_for_other_sessions(tmp_path: Path) -> None:
     script = tmp_path / "fake_runtime.py"
@@ -1174,3 +1178,266 @@ def test_client_reports_missing_bundled_runtime_dependency(monkeypatch: pytest.M
 
     with pytest.raises(FileNotFoundError, match="Install deepseek-harness-runtime-bin"):
         HarnessClient(HarnessConfig(dsh_home="/explicit/home")).start()
+
+
+def test_respond_interaction_sends_question_identity_and_answers(tmp_path: Path) -> None:
+    script = tmp_path / "interaction_runtime.py"
+    script.write_text('''
+import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    if request["method"] == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {}}), flush=True)
+        break
+    assert request["method"] == "interaction/respond"
+    assert request["params"] == {"interactionId": "question-1", "answers": [{"id": "task", "selected": [], "custom": "Inspect the SDK"}]}
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"accepted": True}}), flush=True)
+''', encoding="utf-8")
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
+        assert client.respond_interaction("question-1", [
+            {"id": "task", "selected": [], "custom": "Inspect the SDK"},
+        ]) is True
+
+
+def test_session_steer_sends_identified_input_without_waiting_for_completion(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    client = object.__new__(HarnessClient)
+    captured = []
+
+    def request(method, params, **kwargs):
+        captured.append((method, params))
+        return SimpleNamespace(messageId="message-steer")
+
+    monkeypatch.setattr(client, "request", request)
+    result = client.session_steer(
+        "session-1", [{"type": "text", "text": "change direction"}], request_id="input-1",
+    )
+    assert result == "message-steer"
+    assert captured == [("session/steer", {
+        "sessionId": "session-1", "requestId": "input-1",
+        "contentBlocks": [{"type": "text", "text": "change direction"}],
+    })]
+
+
+def test_live_assistant_frame_reaches_callback_before_durable_answer(tmp_path: Path) -> None:
+    observed = tmp_path / "chunk-observed"
+    script = tmp_path / "stream_runtime.py"
+    script.write_text('''
+import json, sys, time
+from pathlib import Path
+observed = Path(sys.argv[1])
+def notify(method, params):
+    print(json.dumps({"jsonrpc": "2.0", "method": method, "params": params}), flush=True)
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request["method"]
+    if method == "initialize":
+        result = {"serverInfo": {"name": "fake", "version": "test"}}
+    elif method == "session/prompt":
+        session = request["params"]["sessionId"]
+        notify("session.event", {"sessionId": session, "event": {"type": "agent/inbox/spliced", "data": {"inserted": [{"id": "message-1"}]}}})
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"messageId": "message-1"}}), flush=True)
+        notify("session.assistant_stream", {"sessionId": session, "frame": {"type": "chunk", "chunk": {"type": "text-delta", "text": "partial"}}})
+        deadline = time.monotonic() + 10
+        while not observed.exists():
+            if time.monotonic() >= deadline:
+                raise RuntimeError("host did not observe the live frame")
+            time.sleep(0.01)
+        notify("session.event", {"sessionId": session, "event": {"type": "assistant/message", "data": {"content": [{"type": "text", "text": "complete"}]}}})
+        notify("session.status", {"sessionId": session, "status": "idle"})
+        continue
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
+    if method == "shutdown":
+        break
+''', encoding="utf-8")
+
+    def on_notification(notification: Notification) -> None:
+        if notification.method == "session.assistant_stream":
+            assert notification.payload["frame"]["chunk"]["text"] == "partial"
+            observed.write_text("seen", encoding="utf-8")
+
+    with DeepSeekHarness(_launch_args=(sys.executable, str(script), str(observed))) as harness:
+        result = harness.run("work", on_notification=on_notification)
+    assert result.final_response == "complete"
+    assert observed.exists()
+
+
+@pytest.mark.parametrize("capability,wait_for_subagents,expected", [
+    (True, True, "final"), (True, False, "intermediate"),
+    (False, True, "intermediate"), ("absent", True, "intermediate"),
+])
+def test_negotiated_tree_settlement_and_legacy_idle(
+    tmp_path: Path, capability, wait_for_subagents: bool, expected: str,
+) -> None:
+    script = tmp_path / "settlement_runtime.py"
+    script.write_text('''
+import json, sys
+capability = json.loads(sys.argv[1])
+def notify(method, payload):
+    print(json.dumps({"jsonrpc": "2.0", "method": method, "params": payload}), flush=True)
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request["method"]
+    if method == "initialize":
+        result = {"serverInfo": {"name": "fake", "version": "test"}}
+        if capability != "absent": result["capabilities"] = {"sessionTreeSettled": capability}
+    elif method == "session/prompt":
+        session = request["params"]["sessionId"]
+        notify("session.event", {"sessionId": session, "event": {"type": "agent/inbox/spliced", "data": {"inserted": [{"id": "input"}]}}})
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"messageId": "input"}}), flush=True)
+        for text in ("intermediate", "final"):
+            notify("session.status", {"sessionId": session, "status": "running"})
+            notify("session.event", {"sessionId": session, "event": {"type": "assistant/message", "data": {"content": [{"type": "text", "text": text}]}}})
+            notify("session.status", {"sessionId": session, "status": "idle"})
+        notify("session.settled", {"sessionId": session})
+        continue
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
+    if method == "shutdown": break
+''', encoding="utf-8")
+    with DeepSeekHarness(_launch_args=(sys.executable, str(script), json.dumps(capability))) as harness:
+        result = harness.run("work", wait_for_subagents=wait_for_subagents)
+    assert result.final_response == expected
+    assert result.notifications[-1].method == (
+        "session.settled" if expected == "final" else "session.status"
+    )
+
+
+def test_capability_flags_are_not_coerced_from_strings() -> None:
+    from pydantic import ValidationError
+    from deepseek_harness.models import InitializeResponse
+
+    with pytest.raises(ValidationError):
+        InitializeResponse.model_validate({"capabilities": {"sessionTreeSettled": "yes"}})
+
+
+def test_addressed_controls_preserve_wire_identity_and_validate_receipts(tmp_path: Path) -> None:
+    script = tmp_path / "controls_runtime.py"
+    script.write_text('''
+import json, sys
+expected = [
+    ("approval/respond", {"sessionId": "child", "interactionId": "question", "decision": "approved"}, {"accepted": True}),
+    ("session/is-live", {"rootSessionId": "root", "sessionId": "parent"}, {"live": True}),
+    ("subagent/interrupt", {"rootSessionId": "root", "parentSessionId": "parent", "childSessionId": "child"}, {"accepted": True}),
+    ("subagent/prompt", {"rootSessionId": "root", "parentSessionId": "parent", "childSessionId": "child", "requestId": "r1", "content": [{"type": "text", "text": "Continue"}], "clientTimeZone": "Asia/Shanghai"}, {"messageId": "native-message", "replayed": False}),
+]
+for line in sys.stdin:
+    request = json.loads(line)
+    if request["method"] == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {}}), flush=True)
+        break
+    method, params, result = expected.pop(0)
+    assert request["method"] == method and request["params"] == params
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
+assert not expected
+''', encoding="utf-8")
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
+        assert client.respond_approval("child", "question", "approved") is True
+        assert client.is_session_live("root", "parent") is True
+        assert client.interrupt_subagent("root", "parent", "child") is True
+        assert client.subagent_prompt("root", "parent", "child", [{"type": "text", "text": "Continue"}],
+                                     request_id="r1", client_time_zone="Asia/Shanghai") == {
+                                         "messageId": "native-message", "replayed": False}
+
+
+def test_child_waiter_keeps_early_receipt_until_root_settlement(tmp_path: Path) -> None:
+    script = tmp_path / "continuation_runtime.py"
+    script.write_text('''
+import json, sys
+def notify(method, params):
+    print(json.dumps({"jsonrpc": "2.0", "method": method, "params": params}), flush=True)
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request["method"]
+    if method == "initialize":
+        result = {"capabilities": {"subagentControl": True, "sessionTreeSettled": True, "approvalResponses": True}}
+    elif method == "subagent/prompt":
+        p = request["params"]
+        notify("subagent.started", {"parentSessionId": "root", "childSessionId": "child", "mode": "continuable"})
+        notify("session.event", {"sessionId": "child", "event": {"type": "agent/inbox/spliced", "data": {"inserted": [{"id": "message-1"}]}}})
+        notify("session.status", {"sessionId": "root", "status": "idle"})
+        notify("session.settled", {"sessionId": "child"})
+        notify("session.settled", {"sessionId": "root"})
+        result = {"messageId": "message-1", "replayed": False}
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
+    if method == "shutdown": break
+''', encoding="utf-8")
+    observed = []
+    with DeepSeekHarness(dsh_home=str(tmp_path / "home"),
+                         _launch_args=(sys.executable, str(script))) as harness:
+        with harness.client.subscribe_notifications() as subscription:
+            assert harness.run_subagent("Continue", root_session_id="root", parent_session_id="root",
+                                        child_session_id="child", request_id="r1",
+                                        on_accepted=lambda message: observed.append(("accepted", message)),
+                                        on_notification=lambda notification: observed.append((notification.method, notification.payload))) == "message-1"
+            assert harness.capabilities.approvalResponses
+            assert observed[0] == ("accepted", "message-1")
+            assert observed[-1] == ("session.settled", {"sessionId": "root"})
+            count = subscription.pending_count
+            assert count == 5
+            for _ in range(count):
+                subscription.next(timeout_seconds=1)
+                subscription.acknowledge()
+            assert subscription.pending_count == 0
+
+
+@pytest.mark.parametrize("operation,reply", [
+    ("approval", {"accepted": "yes"}),
+    ("live", {"live": "true"}),
+    ("prompt", {"messageId": "", "replayed": False}),
+    ("prompt", {"messageId": "message", "replayed": "no"}),
+])
+def test_control_receipts_reject_coercible_flags_and_empty_ids(monkeypatch, operation, reply) -> None:
+    from pydantic import ValidationError
+
+    client = object.__new__(HarnessClient)
+    monkeypatch.setattr(client, "_request_raw", lambda *_args, **_kwargs: reply)
+    with pytest.raises(ValidationError):
+        if operation == "approval":
+            client.respond_approval("child", "question", "approved")
+        elif operation == "live":
+            client.is_session_live("root", "child")
+        else:
+            client.subagent_prompt("root", "root", "child", [{"type": "text", "text": "Continue"}], request_id="r1")
+
+
+@pytest.mark.parametrize("child", [False, True])
+@pytest.mark.parametrize("error", ["terminal append failed", False])
+def test_run_rejects_failed_native_settlement(tmp_path: Path, child: bool, error) -> None:
+    script = tmp_path / "failed_settlement.py"
+    script.write_text("""
+import json, sys
+def notify(method, payload):
+    print(json.dumps({"jsonrpc": "2.0", "method": method, "params": payload}), flush=True)
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request["method"]
+    if method == "initialize":
+        result = {"capabilities": {"sessionTreeSettled": True, "subagentControl": True}}
+    elif method in ("session/prompt", "subagent/prompt"):
+        root = request["params"].get("sessionId", "root")
+        target = root
+        if method == "subagent/prompt":
+            target = "child"
+            notify("subagent.started", {"parentSessionId": root, "childSessionId": target})
+        notify("session.event", {"sessionId": target, "event": {"type": "agent/inbox/spliced", "data": {"inserted": [{"id": "accepted"}]}}})
+        notify("session.settled", {"sessionId": root, "error": json.loads(sys.argv[1])})
+        result = {"messageId": "accepted", "replayed": False}
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
+    if method == "shutdown": break
+""", encoding="utf-8")
+    with DeepSeekHarness(_launch_args=(sys.executable, str(script), json.dumps(error))) as harness:
+        with pytest.raises(SdkProtocolError, match="completion failed|invalid error"):
+            if child:
+                harness.run_subagent("continue", root_session_id="root", parent_session_id="root",
+                                     child_session_id="child", request_id="request-1")
+            else:
+                harness.run("work", session_id="root")

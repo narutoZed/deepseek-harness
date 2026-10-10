@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -51,6 +51,28 @@ async function runConfined(sandbox: LocalSandboxProvider, command: string, polic
 }
 
 describe.skipIf(!seatbeltUsable)('sandbox-local: real Seatbelt confinement through sandbox-exec', () => {
+  it('permits cache reparent operations while denying sibling and symlink escape writes', async () => {
+    const workspace = await tempDir(homedir())
+    const cache = await tempDir(homedir())
+    const outside = await tempDir(homedir())
+    const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+    const sandbox = await provider()
+    const policy: SandboxPolicy = { mode: 'workspace-write', workspaceRoot: workspace, additionalWritableRoots: [cache] }
+    const allowed = await runConfined(sandbox, `cd ${quote(cache)} && mkdir a b && printf cached > a/src && mv a/src b/dst && ln b/dst a/linked && ln -s ${quote(outside)} escape`, policy)
+    expect(allowed.result.signal).toBeNull()
+    expect(allowed.result.status).toBe(0)
+    expect(readFileSync(join(cache, 'a/linked'), 'utf8')).toBe('cached')
+    const denied = await runConfined(sandbox, `printf bad > ${quote(join(cache, 'escape/denied'))}`, policy)
+    expect(denied.result.status).not.toBe(0)
+    expect(existsSync(join(outside, 'denied'))).toBe(false)
+    await writeFile(join(outside, 'original'), 'unchanged')
+    await runConfined(sandbox, `ln ${quote(join(outside, 'original'))} ${quote(join(cache, 'foreign-link'))} && printf bad > ${quote(join(cache, 'foreign-link'))}`, policy)
+    expect(readFileSync(join(outside, 'original'), 'utf8')).toBe('unchanged')
+    const readonly = await runConfined(sandbox, `printf bad > ${quote(join(cache, 'readonly-denied'))}`, { ...policy, mode: 'read-only' })
+    expect(readonly.result.status).not.toBe(0)
+    expect(existsSync(join(cache, 'readonly-denied'))).toBe(false)
+  })
+
   it('read-only denies a write — the file must NOT exist, and the kernel speaks the advertised dialect', async () => {
     const workdir = await tempDir(tmpdir())
     const sandbox = await provider()

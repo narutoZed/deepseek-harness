@@ -7,9 +7,13 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
+根 agent 向用户提问时，SDK 宿主会收到 `interaction.request`。`interaction/respond` 接受每个问题 id 对应的一条回答，并继续同一个等待中的工具。无效回答保留等待状态；中止或 SDK 关闭会拒绝提问并清除等待状态。
+
+组合提供 `approval` 时，服务器声明 `approvalResponses`，并转发 SDK 所属根会话及其后代的待处理请求。宿主通过 `approval/respond` 返回一次明确决定；取消和关闭会拒绝待处理审批。按地址控制可续聊子会话使用原生子代理服务，并声明 `subagentControl`。服务器在接收提示词或请求中断前验证持久化的根会话祖先关系和直接父会话。协议字段及重试限制见[协议说明](../protocol/README.zh.md)。
+
 ## 概述
 
-`dsh-sdk-jsonrpc-server` 通过 stdio 服务 SDK 协议格式（wire format），使进程外客户端能够驱动 harness agent（智能体）：它为每个 `sessionId` 打开一个会话、把用户提示词排入队列，并把每个会话事件与 agent 状态转换流式发回客户端。把它作为 `jsonrpc` 插件挂载到 Loader 组合中；外围插件树提供其余一切——agent、模型适配器、持久化与工具。Stdout 只承载 JSON-RPC 帧，因此部署不得组合 stdout logger。它通过 dispose（资源释放）根运行时并以 0 退出应答 `shutdown`；EOF 与信号退出归 app bin 负责。
+`dsh-sdk-jsonrpc-server` 让进程外客户端通过 stdio JSON-RPC 打开会话、排队提示词，并接收会话事件、实时助手帧和子 agent 更新。将其挂载到提供 agent、模型适配器、持久化与工具的 Loader 组合中。Stdout 专用于 JSON-RPC 帧。客户端可以等待会话树活动结束、导出已完成轮次，并把可信快照 fork 到另一工作区。关闭操作释放根运行时；应用负责 EOF 和信号退出。
 
 ## 目录
 
@@ -27,11 +31,26 @@ kind: "package-reference"
 
 `session/working-directory/get` 接收 `{ sessionId }`；`session/working-directory/set` 接收 `{ sessionId, path }`。两者均返回 `{ cwd }`，并可创建未知 Session，而不启动模型轮次。读取通过工作目录服务恢复缺失目录；修改保留起始目录元数据与权限，并通过已记录的用户上下文告知模型。
 
-当运行时必须服务 SDK 客户端时挂载本插件：把它加入组合了 agent 服务的 `cordis.yml`，启动运行时，客户端即可通过 stdio 连接。常用路径是显式的——插件需要 `agents` 服务；其余每个能力都来自外围插件树。
+当运行时必须服务 SDK 客户端时挂载本插件：把它加入组合了 agent 服务的 `cordis.yml`，启动运行时，客户端即可通过 stdio 连接。常用路径是显式的——插件需要 `agents`、`sessions`、`workingDirectory` 和 `sessionProjections` 服务；其他能力来自外围插件树。
+
+`dsh-sdk-jsonrpc-server` 通过 stdio 服务 SDK 协议格式，使进程外客户端能够驱动 harness agent（智能体）：它为每个 `sessionId` 打开一个会话、把用户提示词排入队列，并把每个会话事件、agent 状态转换、实时 assistant stream frame 与 subagent 生命周期更新实时流回客户端。把它作为 `jsonrpc` 插件挂载到 Loader 组合中；外围插件树提供其余一切——agent、模型适配器、持久化与工具。Stdout 只承载 JSON-RPC 帧，因此部署不得组合 stdout logger。它通过 dispose（资源释放）根运行时并以 0 退出应答 `shutdown`；EOF 与信号退出归 app bin 负责。
+
+`initialize` 声明 `capabilities.sessionTreeSettled: true`。接受提示词后，服务器通过原生 `session/wait` 实现等待根会话活动、后代准备阶段、正在执行的子会话及排队的父会话后续工作，再发送 `session.settled`。停驻的空闲子会话不会阻塞完成。没有持久终止记录的实时失败通过通知的 `error` 字符串传递，由两个客户端拒绝该次运行。原始 `session.status` 仍表示根驱动器状态；活动结束不把输出归属于单条提示词，也不替代关闭时的资源释放。
+
+`session/export` 接受源会话、已完成轮次、可选结束时间及正数的字节预算。冷导出直接读取持久数据，不启动 agent。`session/fork` 将种子及附件导入目标，使用目标初始化时的模型和工作区。相同目标可重新打开以重试。分支准入失败会释放新获取的目标句柄；关闭操作先等待进行中的分支创建，再释放拥有的会话。可信调用方负责授权两侧工作区，不向不可信 HTTP 输入开放快照导入。
+
+服务端在 `session/created` 时将子会话自己拥有的持久描述符投影为创建元数据。宿主无需关联工具调用、解析渲染后的回执或打开私有会话文件，就能展示创建标签。
+
+<a id="running-session-steering"></a>
+### 运行中会话的引导
+
+服务端通过 `session/steer` 接受下一步输入，并在排队提示词上保留调用方身份。重试和空闲会话行为见[协议说明](../protocol/README.zh.md#running-session-steering)。
 
 ### 组装
 
 插件在首次使用时为每个 `sessionId` 创建一个 agent。已注册的模型适配器优先用于该路由；尚无适配器负责的 `deepseek-official` 路由会挂载 DeepSeek 适配器，任何其他尚无适配器负责的提供方都会导致初始化失败。初始化成功前，所选适配器会解析确切模型与可选推理强度。
+
+进程替换后，第一次发送到已持久化会话 id 的提示词会恢复其对话。只有精确的已存在创建错误会选择恢复；其他创建失败原样传播。
 
 ### 配置
 
@@ -47,7 +66,7 @@ Stdout 只承载 JSON-RPC 帧，客户端可以逐字节解析；诊断信息应
 
 ### SDK 客户端可以做什么
 
-`initialize` 是运行时就绪边界：服务器由 Loader 组合挂载时，会等待当前插件树完成所有加载任务后再响应，因此首次提示词能够看到 MCP 初始工具发现等异步同级能力。握手返回协议稳定标识 `deepseek-harness-sdk-runtime`。服务器会通过所选适配器校验提供方／模型路由与可选的非空 `reasoningEffort`，再保存这些值；省略时不会保存推理强度，因此模型保留自身默认值。可选的正整数 `maxTokens` 会成为每个 SDK 创建的 agent 及其进程内后代的请求输出上限，省略时则应用所选适配器或提供方路由的默认值。JSON-RPC 请求可能并发分派，因此在一次 `initialize` 成功完成之前，`session/prompt` 会拒绝；客户端必须等待握手完成后再发送提示词。已接受的提示词会把一条带标识的用户消息排入队列，并立即返回 `{ messageId }`；服务器随后把每个持久事实作为 `session.event`、把整个 agent 生命周期的每次状态转换作为 `session.status` 流式发出。它不会把某条助手消息或 `turn/end` 归属于某个提示词，同一会话上的独立请求可以继续排入更多工作。持久化根目录与 persona 来自外围组合。
+`initialize` 是运行时就绪边界：服务器由 Loader 组合挂载时，会等待当前插件树完成所有加载任务后再响应，因此首次提示词能够看到 MCP 初始工具发现等异步同级能力。握手返回协议稳定标识 `deepseek-harness-sdk-runtime`。服务器会通过所选适配器校验提供方／模型路由与可选的非空 `reasoningEffort`，再保存这些值；省略时不会保存推理强度，因此模型保留自身默认值。可选的正整数 `maxTokens` 会成为每个 SDK 创建的 agent 及其进程内后代的请求输出上限，省略时则应用所选适配器或提供方路由的默认值。JSON-RPC 请求可能并发分派，因此在一次 `initialize` 成功完成之前，`session/prompt` 会拒绝；客户端必须等待握手完成后再发送提示词。已接受的提示词会把一条带标识的用户消息排入队列，并立即返回 `{ messageId }`；服务器随后把每个持久事实作为 `session.event`、把整个 agent 生命周期的每次状态转换作为 `session.status`、把每个实时 assistant stream frame 作为 `session.assistant_stream` 流式发出。它不会把某条助手消息或 `turn/end` 归属于某个提示词，同一会话上的独立请求可以继续排入更多工作。持久化根目录与 persona 来自外围组合。
 
 `session/wait` 观察已有 SDK 会话，直到受管理后代及其触发的根 Agent 后续轮次完成。它拒绝未知或已释放的根 Agent，不会创建会话，并在后代检查期间根 Agent 持续空闲后响应。收件箱消息处于停放状态的空闲子级继续驻留，但不延迟此响应；后续唤醒输入可使其继续运行。完成前发出的会话通知在 stdio 传输上先于响应到达。Agent 的运行时错误会保留在对应的确切会话中，直到后续提交的 `turn/end` 记录结果；否则等待请求会失败，即使错误发生在等待请求之前。终止事件已经记录的错误仍通过会话事件表达，后续成功的活动会清除较早的运行时错误。
 
@@ -67,7 +86,7 @@ Stdout 只承载 JSON-RPC 帧，客户端可以逐字节解析；诊断信息应
 
 ### 设计理念
 
-本插件是轻量的展示适配器：[`HarnessSdkJsonRpcServer`](src/server.ts) 负责协议方法与通知，传输与具名协议类型来自 `dsh-sdk-protocol`，与客户端 SDK 共享。它订阅会话、agent 与 subagent 生命周期事件，并把它们作为协议通知转发；只有当服务在生命周期建立快照时记录的 `local` 标志为 true 时才转发 subagent 完成事件——提供方名称、子级 id 与持久化谱系均不能证明本地性。
+本插件是薄薄的展示适配器：[`HarnessSdkJsonRpcServer`](src/server.ts) 负责协议方法与通知，传输与具名协议类型来自 `dsh-sdk-protocol`，与客户端 SDK 共享。它订阅会话事件、agent 状态、实时 assistant stream frame 与 subagent 生命周期事件，并把它们作为协议通知转发；只有当服务在生命周期建立快照时记录的 `local` 标志为 true 时才转发 subagent 完成事件——提供方名称、子级 id 与持久化谱系均不能证明本地性。
 
 ### 源码地图
 
@@ -126,7 +145,7 @@ Stdout 只承载 JSON-RPC 帧，客户端可以逐字节解析；诊断信息应
 这些限制说明本插件何时需要特别的运维注意。它们是当前包约束，不是与其他服务方式的对比或任务积压。
 
 - **协议没有逐会话关闭或提示词取消方法**——SDK 创建的 agent 会一直存活到进程关闭。
-- **没有逐提示词结果**——`MessageId` 只标识 inbox 准入；拥有自动化活动区间的客户端必须自行定义并观察该区间。
+- **没有逐提示词结果**——`MessageId` 只标识 inbox 准入；`session.settled` 观察共享活动区间，不把其输出归属于某条提示词。
 - **stdout 纯净性由部署保证**——外围配置仍可能加载 stdout logger 并破坏 JSON-RPC 通道；此插件不会检查或否决同级 logger。
 - **自动挂载适配器仅支持 DeepSeek**——`initialize` 可以复用任何预先注册的模型适配器，但唯一的回退行为是挂载 DeepSeek 适配器。
 

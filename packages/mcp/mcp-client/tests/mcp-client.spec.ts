@@ -389,6 +389,17 @@ describe('tool execution', () => {
     )
   })
 
+  it('sends trusted metadata in _meta without altering tool arguments', async () => {
+    const client = createMockClient([{ name: 'echo', inputSchema: { type: 'object' } }])
+    const requestMeta = { user_id: 'u1', company_id: 'c1', table_ids: ['table-1'] }
+    await syncTools(client as never, ctx, { ...defaultOpts, requestMeta }, new Map())
+    await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('meta-call'), name: 'mcp__srv__echo', arguments: { msg: 'hello' } })
+    expect(client.callTool).toHaveBeenCalledWith(
+      { name: 'echo', arguments: { msg: 'hello' }, _meta: requestMeta },
+      expect.objectContaining({ timeout: 60_000 }),
+    )
+  })
+
   it('sends the raw name for normalized public names', async () => {
     const client = createMockClient(
       [{ name: 'admin.reset', inputSchema: { type: 'object' } }],

@@ -82,6 +82,8 @@ The completion notice contains the final Claude Code answer, or the stop reason 
 
 An install that omits optional dependencies, uses an unsupported platform, or loses the selected payload leaves the provider dormant and fails the first delegation at the SDK startup boundary with a safe `query-start` / `unknown` failure fact; there is no host-CLI fallback. The original product error stays on the internal cause chain and in the provider's Host log. A cancelled run settles as `aborted`.
 
+This provider does not translate additional DSH writable-directory grants into its product-specific sandbox. When the parent policy contains such grants and its mode is confined, startup is rejected before spawning the product. Use the native local subagent for that session; unconstrained sessions retain the configured product permission behavior.
+
 -----
 
 <a id="understand-the-implementation"></a>

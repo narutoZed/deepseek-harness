@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-05-sdk-subagent-creation-metadata.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-sdk-subagent-creation-metadata.md
+/agent-note-sdk-subagent-creation-metadata:
+  en: 7ea2460660ed9ebd
+  zh: 21db7acc7220eeb2
+/agent-note-sdk-subagent-creation-metadata/problem:
+  en: b681cfbdf24dddc1
+  zh: 9f556759ff603ecb
+/agent-note-sdk-subagent-creation-metadata/decision:
+  en: ab37f2c01dcfee28
+  zh: a1a05f90935adb5e
+/agent-note-sdk-subagent-creation-metadata/alternatives-considered:
+  en: c8db8b82aaa126cb
+  zh: f8589ca31b05176e
+/agent-note-sdk-subagent-creation-metadata/consequences:
+  en: ebc46a3cf607363e
+  zh: 2a6671e41a5170ea

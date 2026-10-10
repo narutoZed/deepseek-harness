@@ -56,6 +56,8 @@ kind: "package-reference"
 
 不受支持的平台或不可用的 runner 会拒绝执行：`confine()` 以 `SANDBOX_UNAVAILABLE` 拒绝 并列出该平台的 runner 选项，消费方会呈现该错误，而不是让命令不受限制地运行。启动后拒绝自身 profile 的 runner 由其致命 stderr 签名与退出码识别，因此损坏的沙箱不会被误认为被拒绝的命令。`runnerCommand` 覆盖是操作方断言：它跳过功能探测，并假定配置的 runner 诚实实现与 bwrap 兼容的 profile。
 
+额外可写目录在 Bubblewrap、Landlock 与 Seatbelt 中使用同一份规范化根目录列表。Bubblewrap 为命令提供私有 `/tmp`，并绑定其他授权目录，包括配置的临时目录。携带额外根目录的策略要求完整强制执行；部分强制执行的 Landlock 和 Windows ACL 后端会在命令启动前拒绝执行，避免旧版 Landlock 的跨目录限制在包管理器中表现为 `EXDEV`。不同挂载点仍可能不支持硬链接，调用方需要支持跨挂载复制。
+
 -----
 
 <a id="understand-the-implementation"></a>

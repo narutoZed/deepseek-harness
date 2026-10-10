@@ -1894,6 +1894,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the fully resolved per-call mode and absolute workspace root.',
       },
       {
+        signature: 'registerWritableRoots(roots: readonly string[]): () => void',
+        description: 'Authorize deployment-owned directories without changing the session\'s mode. Register through the contributing plugin\'s effect so disposal revokes its grant. Callers must keep these roots and their ancestors outside model-controlled renames.',
+        parameters: [{ name: 'roots', description: 'existing absolute directory paths from trusted plugin configuration.' }],
+        returns: 'disposer revoking this registration; throws for missing directories or filesystem roots.',
+      },
+      {
         signature: 'overrideOf(session: Session): SandboxMode | undefined',
         description: 'Read the session override without applying the deployment default.',
         parameters: [{ name: 'session', description: 'session whose log supplies the override.' }],
@@ -6543,7 +6549,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SandboxExecutionPolicy',
-    declaration: 'export interface SandboxExecutionPolicy {\n    mode: SandboxMode;\n    workspaceRoot: string;\n    sessionId?: SessionId;\n}',
+    declaration: 'export interface SandboxExecutionPolicy {\n    mode: SandboxMode;\n    workspaceRoot: string;\n    additionalWritableRoots?: readonly string[];\n    sessionId?: SessionId;\n}',
   },
   {
     name: 'SandboxMode',

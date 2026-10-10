@@ -6,20 +6,23 @@
   en: 9fd8e0cf5872dc5b
   zh: c5209369edd2e941
 /deepseek-ai-dsh-sdk-jsonrpc-server:
-  en: 96813b70808d7c86
-  zh: ab20ab1cb59432c1
+  en: 776d8f7c33202175
+  zh: 7ec0fc7cc4ef50a9
 /deepseek-ai-dsh-sdk-jsonrpc-server/summary:
-  en: 1412ec56449364a9
-  zh: 604f7127ce6e96b5
+  en: 48b608da514a21b2
+  zh: 566d49a87dd495da
 /deepseek-ai-dsh-sdk-jsonrpc-server/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
 /deepseek-ai-dsh-sdk-jsonrpc-server/use-this-package:
-  en: ab5b719668e746f2
-  zh: 971c2fdaa9e7d351
+  en: e67e034efa14f8ab
+  zh: edecb6549edff744
+/deepseek-ai-dsh-sdk-jsonrpc-server/use-this-package/running-session-steering:
+  en: 5c820551acab7c56
+  zh: 57f86f6c43e0f576
 /deepseek-ai-dsh-sdk-jsonrpc-server/use-this-package/wiring:
-  en: 47a33e9397e36e15
-  zh: e6d173820f9ea6e5
+  en: 269c097976d3c854
+  zh: efce459c9491e7c1
 /deepseek-ai-dsh-sdk-jsonrpc-server/use-this-package/configuration:
   en: a908534bf8193305
   zh: 6e3875e9ea0ccc79
@@ -27,8 +30,8 @@
   en: 784b68b5a498f2d5
   zh: 2c3c5a1490845179
 /deepseek-ai-dsh-sdk-jsonrpc-server/use-this-package/what-sdk-clients-can-do:
-  en: b4351b6b407fe65f
-  zh: 52d711d554d2ad33
+  en: b5b6228c1092e56c
+  zh: a90f05518ffe91fc
 /deepseek-ai-dsh-sdk-jsonrpc-server/use-this-package/shutdown-and-exit:
   en: 08c3858f53090f39
   zh: dfae960e11515b06
@@ -36,8 +39,8 @@
   en: eca39e7027d67d8f
   zh: dd3f494276322857
 /deepseek-ai-dsh-sdk-jsonrpc-server/understand-the-implementation/design-concept:
-  en: e83e01184c1a45ee
-  zh: d54ed126d31ee6f1
+  en: 599be6cf53a6a1fb
+  zh: 6e7bd6c702bb5cf9
 /deepseek-ai-dsh-sdk-jsonrpc-server/understand-the-implementation/source-map:
   en: 9ef78eca4d95d97c
   zh: 45ff05f4d6c1cd0b
@@ -66,8 +69,8 @@
   en: f5d5f97a153f7c70
   zh: f681f89596f500f5
 /deepseek-ai-dsh-sdk-jsonrpc-server/known-limitations-and-deferred-work:
-  en: a6d0b12d02961572
-  zh: 92822e033db55980
+  en: 26e0a296f4e349a8
+  zh: e94a44c96c63a978
 /deepseek-ai-dsh-sdk-jsonrpc-server/known-limitations-and-deferred-work/dev-note:
   en: 583a835f84c55c33
   zh: a4377e2c9bea8c4e

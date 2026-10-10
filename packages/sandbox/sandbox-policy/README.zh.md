@@ -57,6 +57,8 @@ kind: "package-reference"
 
 无效的配置模式会在插件加载时被拒绝，因此拼写错误会导致显式报错，而不是静默改变策略。没有 cwd 的会话与无 agent 调用回退到配置的工作区根目录；带已批准显式模式的调用只在该次调用中使用该模式。
 
+部署缓存目录通过 `additionalWritableRoots` 配置，它是可选的现有绝对目录列表。可信插件也可使用 `ctx.effect(() => ctx.sandboxPolicy.registerWritableRoots(paths))` 注册授权；释放 effect 会撤销该次注册。目录及其祖先必须保持在模型可重命名的范围之外。授权目录随解析后的策略返回，仅在 `workspace-write` 下允许写入，并出现在该模式已记录的模型上下文中。缺失路径、相对路径和文件系统根目录会被拒绝。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -113,19 +115,19 @@ kind: "package-reference"
 ##### 只读
 
 ```markdown
-Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.
+Current file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.
 ```
 
 ##### 工作区写入
 
 ```markdown
-Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: "<workspace root>". Some platform temporary areas may also be writable.
+Current file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: "<workspace root>".
 ```
 
 ##### 完全访问
 
 ```markdown
-Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.
+Current file policy: danger-full-access. The file sandbox does not restrict file modifications by available operations.
 ```
 
 #### Token 影响

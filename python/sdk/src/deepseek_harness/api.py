@@ -7,7 +7,7 @@ from typing import Callable
 
 from .client import HarnessClient, HarnessConfig
 from .errors import SdkProtocolError
-from .models import JsonObject, Notification
+from .models import JsonObject, Notification, RuntimeCapabilities
 
 
 @dataclass(slots=True)
@@ -88,6 +88,8 @@ class DeepSeekHarness:
             _launch_args=_launch_args,
         )
         self._initialized = False
+        self._session_tree_settled = False
+        self.capabilities = RuntimeCapabilities()
 
     def __enter__(self) -> "DeepSeekHarness":
         self.start()
@@ -104,13 +106,15 @@ class DeepSeekHarness:
         if self._initialized:
             return
         self._client.start()
-        self._client.initialize(
+        initialized = self._client.initialize(
             cwd=self._cwd,
             provider=self.config.provider,
             model=self.config.model,
             reasoning_effort=self.config.reasoning_effort,
             max_tokens=self.config.max_tokens,
         )
+        self.capabilities = initialized.capabilities
+        self._session_tree_settled = initialized.capabilities.sessionTreeSettled
         self._initialized = True
 
     def close(self) -> None:
@@ -127,8 +131,53 @@ class DeepSeekHarness:
         *,
         session_id: str | None = None,
         on_notification: Callable[[Notification], None] | None = None,
+        request_id: str | None = None,
+        wait_for_subagents: bool = True,
     ) -> RunResult:
-        return self.start_session(session_id).run(input, on_notification=on_notification)
+        return self.start_session(session_id).run(
+            input, on_notification=on_notification, request_id=request_id,
+            wait_for_subagents=wait_for_subagents,
+        )
+
+
+    def run_subagent(
+        self, input: str | list[JsonObject], *, root_session_id: str, parent_session_id: str,
+        child_session_id: str, request_id: str, client_time_zone: str | None = None,
+        on_notification: Callable[[Notification], None] | None = None,
+        on_accepted: Callable[[str], None] | None = None,
+    ) -> str:
+        """Admit a child continuation and wait for the root activity interval to settle.
+
+        The caller retains the exact root and direct parent/child identities.
+        on_accepted receives the durable inbox id before execution settles.
+        An in-process replay acknowledges its prior message without waiting again.
+        """
+        self.start()
+        if not self.capabilities.subagentControl or not self.capabilities.sessionTreeSettled:
+            raise SdkProtocolError("Runtime does not support settled subagent control")
+        with self.client.subscribe_session_notifications(root_session_id) as subscription:
+            receipt = self.client.subagent_prompt(
+                root_session_id, parent_session_id, child_session_id, normalize_input(input),
+                request_id=request_id, client_time_zone=client_time_zone,
+                notification_subscription=subscription,
+            )
+            message_id = str(receipt["messageId"])
+            if on_accepted is not None:
+                on_accepted(message_id)
+            if receipt["replayed"]:
+                return message_id
+            received = False
+            while True:
+                notification = subscription.next()
+                if not received:
+                    if not _is_inbox_receipt(notification, child_session_id, message_id):
+                        continue
+                    received = True
+                if on_notification is not None:
+                    on_notification(notification)
+                if notification.method == "session.settled" and notification.payload.get("sessionId") == root_session_id:
+                    _raise_settlement_error(notification)
+                    return message_id
 
 
 class Session:
@@ -151,8 +200,11 @@ class Session:
         input: str | list[JsonObject],
         *,
         on_notification: Callable[[Notification], None] | None = None,
+        request_id: str | None = None,
+        wait_for_subagents: bool = True,
     ) -> RunResult:
         content_blocks = normalize_input(input)
+        wait_for_tree = wait_for_subagents and self.harness._session_tree_settled
         notifications: list[Notification] = []
         events: list[JsonObject] = []
 
@@ -173,6 +225,7 @@ class Session:
                 self.id,
                 content_blocks,
                 notification_subscription=subscription,
+                **({"request_id": request_id} if request_id is not None else {}),
             )
 
             received = False
@@ -183,10 +236,14 @@ class Session:
                         continue
                     received = True
                 collect(notification)
+                if notification.method == "session.settled" and notification.payload.get("sessionId") == self.id:
+                    _raise_settlement_error(notification)
                 if (
-                    notification.method == "session.status"
-                    and notification.payload.get("sessionId") == self.id
-                    and notification.payload.get("status") == "idle"
+                    notification.payload.get("sessionId") == self.id
+                    and (
+                        notification.method == "session.settled" if wait_for_tree else
+                        notification.method == "session.status" and notification.payload.get("status") == "idle"
+                    )
                 ):
                     break
 
@@ -197,6 +254,13 @@ class Session:
             events=events,
             notifications=notifications,
         )
+
+
+def _raise_settlement_error(notification: Notification) -> None:
+    if "error" in notification.payload:
+        if not isinstance(notification.payload["error"], str):
+            raise SdkProtocolError("session.settled returned an invalid error")
+        raise SdkProtocolError(f"Session completion failed: {notification.payload['error']}")
 
 
 def _is_inbox_receipt(notification: Notification, session_id: str, message_id: str) -> bool:

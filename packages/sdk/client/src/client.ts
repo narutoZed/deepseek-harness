@@ -18,6 +18,11 @@ import {
   JsonRpcResponseError,
   type InitializeParams,
   type InitializeResult,
+  type InteractionRespondParams,
+  type ApprovalRespondParams,
+  type SdkSubagentPromptParams,
+  type SdkSubagentPromptResult,
+  type SdkSubagentInterruptParams,
   type SessionPromptParams,
   type SdkPromptContentBlock,
 } from '@deepseek-ai/dsh-sdk-protocol'
@@ -279,17 +284,33 @@ export class HarnessClient {
       || typeof result.serverInfo.name !== 'string' || typeof result.serverInfo.version !== 'string') {
       throw new SdkProtocolError(`initialize returned no server identity: ${JSON.stringify(result)}`)
     }
-    return { serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version } }
+    let capabilities: InitializeResult['capabilities']
+    if (result.capabilities !== undefined) {
+      if (!isRecord(result.capabilities)
+        || ['sessionTreeSettled', 'approvalResponses', 'subagentControl'].some(key =>
+          isRecord(result.capabilities) && result.capabilities[key] !== undefined && typeof result.capabilities[key] !== 'boolean')) {
+        throw new SdkProtocolError('initialize returned malformed capabilities')
+      }
+      capabilities = { sessionTreeSettled: result.capabilities.sessionTreeSettled === true,
+        ...(result.capabilities.approvalResponses === undefined
+          ? {} : { approvalResponses: result.capabilities.approvalResponses === true }),
+        ...(result.capabilities.subagentControl === undefined ? {} : { subagentControl: result.capabilities.subagentControl === true }) }
+    }
+    return {
+      serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version },
+      ...capabilities === undefined ? {} : { capabilities },
+    }
   }
 
   /**
    * Queue one prompt and return its durable inbox identity.
    * @param sessionId - target session; an unknown id creates it.
    * @param contentBlocks - the user message, sent verbatim.
+   * @param requestId - optional caller identity retained in the durable user source.
    * @returns the queued message id.
    */
-  async prompt(sessionId: string, contentBlocks: SdkPromptContentBlock[]): Promise<string> {
-    const params: SessionPromptParams = { sessionId, contentBlocks }
+  async prompt(sessionId: string, contentBlocks: SdkPromptContentBlock[], requestId?: string): Promise<string> {
+    const params: SessionPromptParams = { sessionId, contentBlocks, ...requestId === undefined ? {} : { requestId } }
     const result = await this.request('session/prompt', { ...params })
     if (!isRecord(result) || typeof result.messageId !== 'string') {
       throw new SdkProtocolError(`session/prompt returned no message id: ${JSON.stringify(result)}`)
@@ -323,6 +344,82 @@ export class HarnessClient {
     }
     return result.cwd
   }
+
+  /**
+   * Steer the next step of an already-running SDK session.
+   * @param sessionId - existing session whose agent is running.
+   * @param contentBlocks - input admitted to the nearest step.
+   * @param requestId - process-local retry identity; reuse requires identical content.
+   * @returns the durable inbox message id, without waiting for the agent to finish.
+   */
+  async steer(sessionId: string, contentBlocks: SdkPromptContentBlock[], requestId: string): Promise<string> {
+    const result = await this.request('session/steer', { sessionId, contentBlocks, requestId })
+    if (!isRecord(result) || typeof result.messageId !== 'string') {
+      throw new SdkProtocolError('session/steer returned no message id')
+    }
+    return result.messageId
+  }
+
+  /**
+   * Answer one pending user interaction without starting another agent turn.
+   * @param interactionId - identity from an interaction.request notification.
+   * @param answers - one answer per question id in the notification.
+   * @returns whether the runtime accepted the answers; malformed replies reject.
+   */
+  async respondInteraction(interactionId: string, answers: InteractionRespondParams['answers']): Promise<boolean> {
+    const result = await this.request('interaction/respond', { interactionId, answers })
+    if (!isRecord(result) || typeof result.accepted !== 'boolean') {
+      throw new SdkProtocolError('interaction/respond returned no acceptance flag')
+    }
+    return result.accepted
+  }
+
+  /**
+   * Read current registry membership under an SDK-owned root without resuming.
+   * @param rootSessionId - owning SDK root.
+   * @param sessionId - root or descendant to inspect.
+   * @returns whether the exact related session currently has a live agent.
+   */
+  async isSessionLive(rootSessionId: string, sessionId: string): Promise<boolean> {
+    const result = await this.request('session/is-live', { rootSessionId, sessionId })
+    if (!isRecord(result) || typeof result.live !== 'boolean') throw new SdkProtocolError('session/is-live returned no boolean')
+    return result.live
+  }
+
+  /**
+   * Answer a session's pending native permission question.
+   * @param params - exact session/question and single-use decision.
+   * @returns acceptance of the decision; withdrawn questions reject.
+   */
+  async respondApproval(params: ApprovalRespondParams): Promise<boolean> {
+    const result = await this.request('approval/respond', { ...params })
+    if (!isRecord(result) || result.accepted !== true) throw new SdkProtocolError('approval/respond returned no acceptance flag')
+    return true
+  }
+
+  /**
+   * Queue a continuation into its original child conversation.
+   * @param params - SDK root, direct parent/child, request identity and content.
+   * @returns inbox identity and in-process replay flag; completion arrives as root settlement.
+   */
+  async promptSubagent(params: SdkSubagentPromptParams): Promise<SdkSubagentPromptResult> {
+    const result = await this.request('subagent/prompt', { ...params })
+    if (!isRecord(result) || typeof result.messageId !== 'string' || !result.messageId
+      || typeof result.replayed !== 'boolean') throw new SdkProtocolError('subagent/prompt returned an invalid receipt')
+    return { messageId: result.messageId, replayed: result.replayed }
+  }
+
+  /**
+   * Signal only the selected child activation.
+   * @param params - SDK root and direct parent/child address.
+   * @returns signal admission, not child quiescence.
+   */
+  async interruptSubagent(params: SdkSubagentInterruptParams): Promise<boolean> {
+    const result = await this.request('subagent/interrupt', { ...params })
+    if (!isRecord(result) || result.accepted !== true) throw new SdkProtocolError('subagent/interrupt returned no acceptance flag')
+    return true
+  }
+
 
   /**
    * Send one JSON-RPC request and await its result.

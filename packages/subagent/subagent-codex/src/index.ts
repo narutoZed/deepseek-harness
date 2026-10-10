@@ -1,3 +1,4 @@
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 /**
  * Profile-named Codex one-shot subagent provider. Every accepted run starts a
  * fresh official package-local Codex wrapper with `app-server --stdio` in the
@@ -71,6 +72,10 @@ class CodexProvider implements SubagentProvider {
   ) {}
 
   start(request: ResolvedSubagentStartRequest) {
+    const policy = this.ctx.get('sandboxPolicy')?.resolve({ session: request.parent.session })
+    if (policy?.additionalWritableRoots?.length && policy.mode !== 'danger-full-access') {
+      throw new Error('subagent-codex cannot enforce additional writable directories; use the native local subagent for this confined session')
+    }
     let cwd: string
     try {
       cwd = assertUsableCwd('subagent-codex', 'child cwd', request.cwd)

@@ -60,6 +60,18 @@ describe('JsonRpcLineTransport', () => {
     b.close()
   })
 
+  it.each([undefined, -32000])('preserves explicit handler error code %s through both peers', async (code) => {
+    const { a, b } = transportPair()
+    a.onRequest(async () => { throw new JsonRpcResponseError(code, 'Expired', code === undefined ? undefined : { code: 'interaction_expired' }) })
+    a.start()
+    b.start()
+    try {
+      await expect(b.request('approval/respond', {})).rejects.toMatchObject({
+        code: code ?? -32603, message: 'Expired', data: code === undefined ? undefined : { code: 'interaction_expired' },
+      })
+    } finally { a.close(); b.close() }
+  })
+
   it('rejects immediately on a pre-aborted signal without registering pending state', async () => {
     const { b } = transportPair()
     b.start()

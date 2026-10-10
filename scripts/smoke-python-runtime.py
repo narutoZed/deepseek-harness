@@ -2483,7 +2483,7 @@ def build_snapshot_files(
         "final_response": result.final_response,
         "events": result.events,
         "notifications": [
-            {"method": notification.method, "payload": notification.payload}
+            snapshot_notification(notification)
             for notification in result.notifications
         ],
     }
@@ -2614,6 +2614,16 @@ def snapshot_agent_id(result: "RunResult", child_id: str) -> str:
         if isinstance(agent_id, str):
             return agent_id
     raise AssertionError(f"advanced snapshot has no finished agent for child {child_id}")
+
+
+def snapshot_notification(notification: "Notification") -> dict[str, object]:
+    """Normalize only the live frame clock, retaining payload, order, revision and identity."""
+    payload = dict(notification.payload)
+    if notification.method == "session.assistant_stream":
+        frame = payload.get("frame")
+        if isinstance(frame, dict) and "time" in frame:
+            payload["frame"] = {**frame, "time": 0}
+    return {"method": notification.method, "payload": payload}
 
 
 def normalize_snapshot_value(

@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-05-sdk-durable-session-resume.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-sdk-durable-session-resume.md
+/agent-note-resume-durable-sdk-sessions:
+  en: 6bc8d2322795da1b
+  zh: 49ef5a41362ab1ac
+/agent-note-resume-durable-sdk-sessions/problem:
+  en: 6338af022b602696
+  zh: f8f6bc2fa9009ef5
+/agent-note-resume-durable-sdk-sessions/decision:
+  en: c7872a20d3040aaf
+  zh: 8241e6cfcf6e3203
+/agent-note-resume-durable-sdk-sessions/alternatives-considered:
+  en: 5080308c85c5cd30
+  zh: 9458beaddccdd683
+/agent-note-resume-durable-sdk-sessions/consequences:
+  en: 859976d3cc003faa
+  zh: b1dbeff206f2653d

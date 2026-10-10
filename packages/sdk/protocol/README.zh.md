@@ -7,6 +7,8 @@ kind: "package-library"
 
 [English](README.md) | 中文
 
+`interaction.request` 用 `sessionId`、`interactionId` 和 `questions` 标识一批等待回答的问题。`interaction/respond` 发送该交互 id，以及包含问题 `id`、`selected` 字符串数组和可选 `custom` 文本的回答；成功返回 `{ accepted: true }`。
+
 ## 概述
 
 `dsh-sdk-protocol` 让 DeepSeek Harness 运行时与其 SDK 客户端通过按换行分帧的字节流交换 JSON-RPC 2.0 消息：一个传输类，加上协议两端共同使用的具名请求、结果与通知类型。服务端是 [`dsh-sdk-jsonrpc-server`](../server/README.zh.md) 插件；客户端是 TypeScript 的 [`dsh-sdk-client`](../client/README.zh.md) 与 [Python SDK](../../../python/README.zh.md)（后者复现这些结构但不导入它们）。当你实现或调试协议某一端时使用本包：分帧规则、方法名、载荷类型与错误语义都在这里。它是纯库——无插件、无配置、无注册。
@@ -27,13 +29,34 @@ kind: "package-library"
 
 当你构建或调试 SDK 协议端——服务插件、客户端库或使用该协议的自定义工具——时使用本包。它为你提供一个在调用方持有的字节流上承载 JSON-RPC 2.0 的传输，以及每个 SDK 方法与通知的类型化结构。
 
+`InitializeResult.capabilities.sessionTreeSettled` 可选声明对新增 `session.settled` 通知的支持，载荷为 `{ sessionId }`。根 agent 空闲、next-turn inbox 为空且原生后代的准备和运行结束后，该通知结束已接受的根活动区间。客户端必须协商此能力后再等待该标记；原始 `session.status` 保留既有含义。
+
+`session/export` 和 `session/fork` 在可信 SDK 运行时之间传递有大小限制的已完成轮次种子。快照包含源身份、持久事件和附件字节。Fork 结果包含目标身份和构造历史，供公开投影使用。
+
+`subagent.started` 从子会话自身非继承事件的首个兼容持久描述符中提供可选的 `label`、`mode` 和子代理 `provider`。构造期播种的描述符不一定产生实时 `session.event` 通知。描述符缺失、不受支持或损坏时，这些展示字段会省略，但父子身份仍会保留。此通知不复制人格提示、工具过滤器或任务提示词。 创建后才追加的前台描述符仍可通过结构化的 `session.event` 获取；创建元数据不会预测未来事件。
+
+<a id="running-session-steering"></a>
+### 运行中会话的引导
+
+`session/steer` 为已经运行的会话接受 `{ sessionId, requestId, contentBlocks }`，并立即返回持久收件箱的 `messageId`，不等待完成。同一进程内，内容相同且已成功或正在处理的重试复用该回执；相同 id 配合不同内容会被拒绝。准入失败可以重试。会话不存在或空闲时会拒绝，而不是启动新轮次。
+
+`session/prompt` 接受用于关联的可选 `requestId`。两个操作均将其保留为 `source.rpcId`。这些身份不提供跨进程重试恢复。
+
+### 审批与后代控制
+
+`initialize` 声明可选布尔值 `approvalResponses` 和 `subagentControl`。`approval.request` 包含 `sessionId`、`interactionId`、`toolName`，以及可选的 `callId` 和 `reason`。`approval/respond` 要求相同的会话与交互 id，并附带 `decision: "approved" | "cancelled"`；批准仅允许一次操作，取消则拒绝操作。`approval.resolved` 报告 `allowed-once`、`rejected` 或 `cancelled`。过期或已消费的问题以 `data.code: "interaction_expired"` 拒绝。
+
+`subagent/prompt` 接收 `rootSessionId`、直接 `parentSessionId`、`childSessionId`、`requestId`、持久化 `content` 和可选的 `clientTimeZone`，返回 `{ messageId, replayed }`。同一进程内的相同重试复用接收回执；相同请求 id 携带不同内容会被拒绝。`subagent/interrupt` 接收这三个会话 id，请求取消该子会话当前轮次后返回 `{ accepted: true }`。两者都要求子会话在该根会话下有持久记录且可续聊。直接父会话必须存活；SDK 根会话可以从持久化记录重新打开，原生服务会恢复其未加载的可续聊子会话。其他后代与父会话继续运行。`session/is-live` 检查 `{ rootSessionId, sessionId }`，不会打开 agent。
+
+可信宿主负责外部用户授权并保留完整会话地址。服务器验证原生祖先关系，但不认证 JSON-RPC 对端。持久化的跨进程请求去重由宿主负责；新运行时不会保留之前的请求回执。
+
 ### 分帧与传输
 
-在你拥有的字节流上，每个 `\n` 结尾的行承载一条 JSON-RPC 2.0 消息。同时带 `id` 与 `method` 的帧是请求，仅 `id` 是响应，仅 `method` 是通知；格式错误的行会被忽略。没有注册处理器的请求应答 `-32601`，处理器失败应答 `-32603`，错误响应会以 `JsonRpcResponseError` 拒绝挂起的请求，并保留协议中的 `code` 与可选 `data`。`start()` 挂接流监听器，`close()` 移除监听器并拒绝挂起请求，但不销毁流。
+在你拥有的字节流上，每个 `\n` 结尾的行承载一条 JSON-RPC 2.0 消息。同时带 `id` 与 `method` 的帧是请求，仅 `id` 是响应，仅 `method` 是通知；格式错误的行会被忽略。没有注册处理器的请求应答 `-32601`，普通处理器失败应答 `-32603`，显式的 `JsonRpcResponseError` 失败保留其 code 和 data，错误响应会以 `JsonRpcResponseError` 拒绝挂起的请求，并保留协议中的 `code` 与可选 `data`。`start()` 挂接流监听器，`close()` 移除监听器并拒绝挂起请求，但不销毁流。
 
 ### SDK 方法
 
-两个协议端共享同一套方法：六个客户端到服务端请求与四个服务端到客户端通知。
+两个协议端共享以下方法。
 
 | 方向 | 方法 | 载荷类型 |
 |---|---|---|
@@ -42,9 +65,22 @@ kind: "package-library"
 | client→server | `session/wait` | `SessionWaitParams` → `{}` |
 | 客户端→服务端 | `session/working-directory/get` | `SessionWorkingDirectoryParams` → `SessionWorkingDirectoryResult` |
 | 客户端→服务端 | `session/working-directory/set` | `SessionWorkingDirectorySetParams` → `SessionWorkingDirectoryResult` |
+| client→server | `interaction/respond` | `InteractionRespondParams` → `InteractionRespondResult` |
+| client→server | `session/steer` | `SessionSteerParams` → `SessionPromptResult` |
+| client→server | `session/export` | `SessionExportParams` → `SessionForkSnapshot` |
+| client→server | `session/fork` | `SessionForkParams` → `SessionForkResult` |
+| client→server | `session/is-live` | `{ rootSessionId, sessionId }` → `{ live }` |
+| client→server | `approval/respond` | `ApprovalRespondParams` → `InteractionRespondResult` |
+| client→server | `subagent/prompt` | `SdkSubagentPromptParams` → `SdkSubagentPromptResult` |
+| client→server | `subagent/interrupt` | `SdkSubagentInterruptParams` → `InteractionRespondResult` |
 | client→server | `shutdown` | 无参数 → `{}` |
 | server→client | `session.event` | `SessionEventNotification`（运行时内每个会话，不过滤） |
-| server→client | `session.status` | `SessionStatusNotification`（整个 agent（智能体）的 `running`/`idle` 转换） |
+| server→client | `interaction.request` | `InteractionRequestNotification` |
+| server→client | `approval.request` | `ApprovalRequestNotification` |
+| server→client | `approval.resolved` | `ApprovalResolvedNotification` |
+| server→client | `session.status` | `SessionStatusNotification`（整个 agent 的 `running`/`idle` 转换） |
+| server→client | `session.settled` | `SessionSettledNotification`（协商确定的根活动结束） |
+| server→client | `session.assistant_stream` | `SessionAssistantStreamNotification`（实时 assistant stream frame） |
 | server→client | `subagent.started` | `SubagentStartedNotification` |
 | server→client | `subagent.finished` | `SubagentFinishedNotification`（仅进程内运行） |
 
@@ -54,7 +90,7 @@ kind: "package-library"
 
 ### 载荷语义
 
-`SessionPromptResult.messageId` 标识已排队的用户消息；它不标识后续的助手消息、轮次结束或提示词结果。`SdkPromptContentBlock` 接受普通持久内容以及 `SdkEncodedImageBlock { type: "image", data, mimeType }`；服务器在入队前把编码图像转换为持久引用。`InitializeParams.reasoningEffort` 是所选提供方／模型路由可选的非空适配器自有标识符；省略时保留该模型的默认值。`InitializeParams.maxTokens` 是可选的正安全整数，用于限制 SDK 创建的 agent 及其进程内后代的每次对话模型输出；省略时应用所选适配器的确切模型默认值。服务器会在初始化期间解析确切路由，并在握手成功前拒绝 `session/prompt`，因此缺少适配器、模型不可用或推理强度不受支持时，不会回退到构造期默认值。`SubagentFinishedNotification.lastAssistantMessage` 携带子 agent 最后一条非空 assistant 消息；若不存在这类消息，则携带其累积的 assistant 文本；子 agent 两种输出均未产生时，该字段缺省。`serverInfo.name` 的协议值固定为 `deepseek-harness-sdk-runtime`。通知载荷依赖 `SessionEvent`（`dsh-session`）、`ContentBlock`（`dsh-llm`）与 `SubagentStopReason`（`dsh-subagent`），因此会话词汇是协议格式约定的一部分。
+`SessionPromptResult.messageId` 标识已排队的用户消息；它不标识后续的助手消息、轮次结束或提示词结果。`SdkPromptContentBlock` 接受普通持久内容以及 `SdkEncodedImageBlock { type: "image", data, mimeType }`；服务器在入队前把编码图像转换为持久引用。`InitializeParams.reasoningEffort` 是所选提供方／模型路由可选的非空适配器自有标识符；省略时保留该模型的默认值。`InitializeParams.maxTokens` 是可选的正安全整数，用于限制 SDK 创建的 agent 及其进程内后代的每次对话模型输出；省略时应用所选适配器的确切模型默认值。服务器会在初始化期间解析确切路由，并在握手成功前拒绝 `session/prompt`，因此缺少适配器、模型不可用或推理强度不受支持时，不会回退到构造期默认值。`SessionAssistantStreamNotification.frame` 携带持久结算前一个进程本地 assistant attempt frame；消费者通过 frame 的 attempt、turn、step 与 outcome 字段把它同后续 `session.event` 结算配对。`SubagentFinishedNotification.lastAssistantMessage` 携带子 agent 最后一条非空 assistant 消息；若不存在这类消息，则携带其累积的 assistant 文本；子 agent 两种输出均未产生时，该字段缺省。`serverInfo.name` 的协议值固定为 `deepseek-harness-sdk-runtime`。通知载荷依赖 `AssistantStreamFrame`（`dsh-agent`）、`SessionEvent`（`dsh-session`）、`ContentBlock`（`dsh-llm`）与 `SubagentStopReason`（`dsh-subagent`），因此实时与持久会话词汇都是协议格式约定的一部分。
 
 -----
 
@@ -115,8 +151,8 @@ kind: "package-library"
 这些限制说明协议未覆盖或未承诺的内容。它们是当前包约束，不是与其他协议格式的对比或任务积压。
 
 - **无协议版本协商**——握手只携带 `serverInfo.version`（`0.0.1`，客户端不校验）；处于预发布阶段，无兼容承诺。
-- **无取消与会话关闭方法**——客户端放弃轮次的方式是关闭运行时进程；见 [JSON-RPC 服务插件](../server/README.zh.md)。
-- **server→client 请求是未使用的能力**——传输层支持，但服务器从不发送；Python SDK 的应答接口为未来审批流程预留。
+- **无根会话取消与会话关闭方法**——客户端通过关闭运行时进程放弃根会话执行；见 [JSON-RPC 服务插件](../server/README.zh.md)。
+- **server→client 请求是未使用的功能**——传输层支持，但服务器从不发送；审批使用通知和客户端到服务端的回复。
 
 <a id="dev-note"></a>
 ### 开发备注

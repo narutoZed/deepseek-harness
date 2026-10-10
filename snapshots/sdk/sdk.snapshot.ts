@@ -167,7 +167,7 @@ const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
     expectedSystem: MINIMAL_SYSTEM_PROMPT,
     expectedToolDescriptions: { bash: MINIMAL_BASH_DESCRIPTION },
     runtimeContext: {
-      includes: ['Current working directory:', 'Current DSH file policy: danger-full-access', 'Approval prompts are disabled in this session'],
+      includes: ['Current working directory:', 'Current file policy: danger-full-access', 'Approval prompts are disabled in this session'],
       excludes: ['workspace-write'],
     },
   },
@@ -395,6 +395,14 @@ function normalizeNotifications(notifications: readonly HarnessNotification[], c
     )).trimEnd().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
   let eventIndex = 0
   const records = notifications.map((notification) => {
+    if (notification.method === 'session.assistant_stream') {
+      const frame = notification.params.frame as Record<string, unknown>
+      // Wall-clock timestamps use the same zero baseline as durable events;
+      // frame order, revisions, indexes, and payloads remain snapshot-visible.
+      return { method: notification.method, params: {
+        ...notification.params, frame: { ...frame, ...('time' in frame ? { time: 0 } : {}) },
+      } }
+    }
     if (notification.method !== 'session.event') return { method: notification.method, params: notification.params }
     const event = normalizedEvents[eventIndex++]
     return { method: notification.method, params: { ...notification.params, event } }
@@ -665,6 +673,7 @@ async function runScenario(scenario: CorpusScenario): Promise<{
           continue
         }
         const result = await session.run(materializeInput(action.content, scenario, cwd, liveSessions), {
+          waitForSubagents: completionSubscription === undefined,
           onNotification: (notification) => {
             notifications.push(notification)
             observe(notification)
@@ -679,7 +688,7 @@ async function runScenario(scenario: CorpusScenario): Promise<{
             && (event.data as JsonObject).title === expected?.title, observe)
         }
         if (completionSubscription !== undefined) {
-          expect(result.finalResponse, 'run returns at the first parent idle').toBe('DONE')
+          expect(result.finalResponse, 'run honors explicit first-parent-idle completion').toBe('DONE')
           expect(result.events.filter(event => event.type === 'turn/end'))
             .toMatchObject([{ data: { turn: 1 } }])
           expect(await harness.client.request('session/wait', { sessionId })).toEqual({})

@@ -56,6 +56,8 @@ With the provider mounted, a command runs under the mode you resolve per call. E
 
 An unsupported platform or an unusable runner fails closed: `confine()` rejects with `SANDBOX_UNAVAILABLE` and names the runner options for the platform, and the consumer surfaces that error rather than running the command unconfined. A runner that starts but refuses its profile is identified by its fatal stderr signature and exit code, so a broken sandbox is not mistaken for a denied command. The `runnerCommand` override is an operator assertion: it skips functional probes and assumes the configured runner implements the bwrap-compatible profile honestly.
 
+Additional writable directories use the same canonical root list in Bubblewrap, Landlock and Seatbelt. Bubblewrap keeps `/tmp` private to the command and binds other authorized roots, including the configured temporary directory. Policies carrying additional roots require full enforcement; partial Landlock and Windows ACL backends reject them before command startup. This prevents legacy Landlock reparent restrictions from surfacing later as package-manager `EXDEV` failures. Separate mount points can still prevent hard links, so callers must support copies between mounts.
+
 -----
 
 <a id="understand-the-implementation"></a>

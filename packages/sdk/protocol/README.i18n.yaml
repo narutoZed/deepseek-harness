@@ -6,8 +6,8 @@
   en: f7e65364dfe462b8
   zh: 20d2b8f84f10f681
 /deepseek-ai-dsh-sdk-protocol:
-  en: dee270a439f6cd2d
-  zh: 44f5ec584c476872
+  en: 52967bf1c1d25fa5
+  zh: 922349a958fa5b82
 /deepseek-ai-dsh-sdk-protocol/summary:
   en: 8813bd2a0bf7a55a
   zh: 07d880c01d13f904
@@ -15,17 +15,23 @@
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
 /deepseek-ai-dsh-sdk-protocol/use-this-package:
-  en: c4ca91b51aab452a
-  zh: 1c77b1deaeb34931
+  en: db7b65ca5f7d7c78
+  zh: 5186346bde9cc0c4
+/deepseek-ai-dsh-sdk-protocol/use-this-package/running-session-steering:
+  en: 9b03fa93d7714fa0
+  zh: c7112cbe29f4d95c
+/deepseek-ai-dsh-sdk-protocol/use-this-package/approval-and-descendant-control:
+  en: b85522fdc2b45030
+  zh: f4f46de8845734af
 /deepseek-ai-dsh-sdk-protocol/use-this-package/framing-and-transport:
-  en: be53c71505c0d1b4
-  zh: 6210dee577715539
+  en: 2ca0183c21786922
+  zh: ed5eb4c47cab6946
 /deepseek-ai-dsh-sdk-protocol/use-this-package/the-sdk-methods:
-  en: 0c7bea342e6a851c
-  zh: de38cf6fe1f4ae76
+  en: 255f627abdfad00a
+  zh: c9a1af8f52c516e8
 /deepseek-ai-dsh-sdk-protocol/use-this-package/payload-semantics:
-  en: 3cf5d4ffbaf37f69
-  zh: 23c4450e31c91d67
+  en: 07d52f90c39e43c0
+  zh: b97810494e4ae0c3
 /deepseek-ai-dsh-sdk-protocol/understand-the-implementation:
   en: a11b136d8296deda
   zh: 85081da5be53c9e1
@@ -48,8 +54,8 @@
   en: ca75c51c89c2c9b0
   zh: 696d26adaf4eda6d
 /deepseek-ai-dsh-sdk-protocol/known-limitations-and-deferred-work:
-  en: c83a6b621a8f8793
-  zh: 32accb03ee0b8ac8
+  en: 604a17d1d91fa0f1
+  zh: 23a0bbf17a753c61
 /deepseek-ai-dsh-sdk-protocol/known-limitations-and-deferred-work/dev-note:
   en: 951fa06249790ac1
   zh: da66e7f53df3ab00

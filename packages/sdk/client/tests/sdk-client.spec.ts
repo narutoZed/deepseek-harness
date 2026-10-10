@@ -78,6 +78,76 @@ describe('DeepSeekHarness', () => {
     await expect(harness.session().getWorkingDirectory()).rejects.toThrow('returned no working directory')
     await expect(harness.session().setWorkingDirectory('.')).rejects.toThrow('returned no working directory')
   })
+
+  it('waits for negotiated tree settlement across an intermediate root idle', async () => {
+    const harness = harnessWith({ FAKE_TREE_SETTLEMENT: '1' })
+    const result = await harness.run('work')
+    expect(harness.supportsSessionTreeSettlement).toBe(true)
+    expect(result.events.filter(event => event.type === 'turn/end')).toHaveLength(2)
+    expect(result.notifications.at(-1)?.method).toBe('session.settled')
+  })
+
+  it.each([
+    ['terminal append failed', 'Session completion failed: terminal append failed'],
+    ['malformed', 'session.settled returned an invalid error'],
+  ])('rejects a failed or malformed tree completion: %s', async (error, message) => {
+    const harness = harnessWith({ FAKE_TREE_SETTLEMENT: '1', FAKE_SETTLEMENT_ERROR: error })
+    await expect(harness.run('work')).rejects.toThrow(message)
+  })
+
+  it('allows explicit first-idle completion on a tree-capable runtime', async () => {
+    const harness = harnessWith({ FAKE_TREE_SETTLEMENT: '1' })
+    const result = await harness.run('dispatch', { waitForSubagents: false })
+    expect(result.events.filter(event => event.type === 'turn/end')).toHaveLength(1)
+    expect(result.notifications.at(-1)?.method).toBe('session.status')
+  })
+
+  it('retains first-idle behavior when the runtime disables tree settlement', async () => {
+    const harness = harnessWith({ FAKE_TREE_SETTLEMENT: '0' })
+    const result = await harness.run('work')
+    expect(harness.supportsSessionTreeSettlement).toBe(false)
+    expect(result.notifications.at(-1)?.method).toBe('session.status')
+  })
+
+  it.each(['container', 'flag'])('rejects malformed capability %s without waiting for activity', async (kind) => {
+    const harness = harnessWith({ FAKE_MALFORMED_CAPABILITIES: kind })
+    await expect(harness.start()).rejects.toThrow('malformed capabilities')
+  })
+  it('retains an identified prompt in its durable user source', async () => {
+    const harness = harnessWith()
+    const result = await harness.run('work', { sessionId: 'main', requestId: 'request-1' })
+    expect(result.events.find(event => event.type === 'agent/inbox/spliced')).toMatchObject({
+      data: { inserted: [{ source: { kind: 'user', rpcId: 'request-1' } }] },
+    })
+  })
+
+  it('steers with the exact session and retry identity and returns the inbox receipt', async () => {
+    const dir = await tempDir('sdk-steer-')
+    const record = join(dir, 'request.json')
+    const harness = harnessWith({ FAKE_RECORD_STEER: record })
+    await expect(harness.client.steer('main', [{ type: 'text', text: 'next step' }], 'input-1'))
+      .resolves.toBe('steer-message')
+    expect(JSON.parse(await readFile(record, 'utf8'))).toEqual({
+      sessionId: 'main', contentBlocks: [{ type: 'text', text: 'next step' }], requestId: 'input-1',
+    })
+  })
+
+  it('rejects steering replies without a durable message id', async () => {
+    const harness = harnessWith({ FAKE_MALFORMED_STEER: '1' })
+    await expect(harness.client.steer('main', [], 'input-1')).rejects.toThrow(SdkProtocolError)
+  })
+  it('answers SDK interactions through the typed client method', async () => {
+    const harness = harnessWith()
+    await expect(harness.client.respondInteraction('question-1', [
+      { id: 'task', selected: [], custom: 'continue' },
+    ])).resolves.toBe(true)
+  })
+
+  it('rejects malformed interaction acceptance replies', async () => {
+    const harness = harnessWith({ FAKE_MALFORMED_INTERACTION: '1' })
+    await expect(harness.client.respondInteraction('question-1', []))
+      .rejects.toThrow(SdkProtocolError)
+  })
   it('ignores notifications that precede the submitted message receipt', async () => {
     const notifications = [
       { method: 'session.status', params: { sessionId: 'owned', status: 'running' } },
@@ -751,5 +821,40 @@ describe('pure helpers', () => {
       { type: 'assistant/message', seq: 0, time: 0, data: { message: { content: [{ type: 'text', text: 'first' }] } } } as never,
       { type: 'assistant/message', seq: 1, time: 0, data: { message: { content: [{ type: 'text', text: 'a' }, { type: 'tool-call' }, { type: 'text', text: 'b' }] } } } as never,
     ])).toBe('ab')
+  })
+})
+
+
+describe('addressed SDK controls', () => {
+  const address = { rootSessionId: 'root', parentSessionId: 'parent', childSessionId: 'child' }
+  it('preserves control capability flags and exact request identities', async () => {
+    const dir = await tempDir('sdk-control-')
+    const record = join(dir, 'request.json')
+    const harness = harnessWith({ FAKE_RECORD_CONTROL: record, FAKE_CONTROL_CAPABILITIES: '1' })
+    const handshake = await harness.client.initialize({ provider: 'p', model: 'm', cwd: dir })
+    expect(handshake.capabilities).toEqual({ approvalResponses: true, subagentControl: true, sessionTreeSettled: true })
+    const approval = { sessionId: 'child', interactionId: 'question', decision: 'approved' as const }
+    expect(await harness.client.respondApproval(approval)).toBe(true)
+    expect(JSON.parse(await readFile(record, 'utf8'))).toMatchObject({ method: 'approval/respond', params: approval })
+    const prompt = { ...address, requestId: 'input-1', content: [{ type: 'text' as const, text: 'Continue' }] }
+    expect(await harness.client.promptSubagent(prompt)).toEqual({ messageId: 'child-message', replayed: false })
+    expect(JSON.parse(await readFile(record, 'utf8'))).toMatchObject({ method: 'subagent/prompt', params: prompt })
+    expect(await harness.client.interruptSubagent(address)).toBe(true)
+    expect(JSON.parse(await readFile(record, 'utf8'))).toMatchObject({ method: 'subagent/interrupt', params: address })
+    expect(await harness.client.isSessionLive('root', 'parent')).toBe(true)
+    expect(JSON.parse(await readFile(record, 'utf8'))).toMatchObject({
+      method: 'session/is-live', params: { rootSessionId: 'root', sessionId: 'parent' },
+    })
+  })
+
+  it.each(['null', '{}', '{"accepted":"yes","live":"yes","messageId":3}', '{"messageId":"","replayed":false}',
+    '{"messageId":"message","replayed":"yes"}'])('rejects malformed control receipt %s', async (reply) => {
+    const harness = harnessWith({ FAKE_CONTROL_RESPONSE: reply })
+    await expect(harness.client.respondApproval({ sessionId: 's', interactionId: 'i', decision: 'cancelled' }))
+      .rejects.toThrow(SdkProtocolError)
+    await expect(harness.client.interruptSubagent(address)).rejects.toThrow(SdkProtocolError)
+    await expect(harness.client.isSessionLive('root', 'child')).rejects.toThrow(SdkProtocolError)
+    await expect(harness.client.promptSubagent({ ...address, requestId: 'r', content: [{ type: 'text', text: 'x' }] }))
+      .rejects.toThrow(SdkProtocolError)
   })
 })

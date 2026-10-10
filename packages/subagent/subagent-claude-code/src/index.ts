@@ -1,3 +1,4 @@
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 /**
  * Profile-named Claude Code one-shot subagent provider. Every accepted run
  * invokes the official Agent SDK in the delegating Session's workspace and
@@ -81,6 +82,10 @@ class ClaudeCodeProvider implements SubagentProvider {
   ) {}
 
   async start(request: ResolvedSubagentStartRequest) {
+    const policy = this.ctx.get('sandboxPolicy')?.resolve({ session: request.parent.session })
+    if (policy?.additionalWritableRoots?.length && policy.mode !== 'danger-full-access') {
+      throw new Error('subagent-claude-code cannot enforce additional writable directories; use the native local subagent for this confined session')
+    }
     let cwd: string
     try {
       cwd = assertUsableCwd('subagent-claude-code', 'child cwd', request.cwd)

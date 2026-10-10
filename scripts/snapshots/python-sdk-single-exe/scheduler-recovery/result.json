@@ -35,6 +35,24 @@
       "session.event",
       "session.event",
       "session.event",
+      "session.assistant_stream",
+      "session.event",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.event",
+      "session.assistant_stream",
       "session.event",
       "session.event",
       "session.event",
@@ -43,9 +61,8 @@
       "session.event",
       "session.event",
       "session.event",
-      "session.event",
-      "session.event",
-      "session.status"
+      "session.status",
+      "session.settled"
     ]
   },
   {
@@ -69,10 +86,18 @@
       "session.event",
       "session.event",
       "session.event",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.assistant_stream",
+      "session.event",
+      "session.assistant_stream",
       "session.event",
       "session.event",
-      "session.event",
-      "session.status"
+      "session.status",
+      "session.settled"
     ]
   }
 ]

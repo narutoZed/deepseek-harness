@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-05-sdk-session-tree-settlement.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-sdk-session-tree-settlement.md
+/agent-note-sdk-session-tree-settlement:
+  en: 46a55aab3f23a76d
+  zh: d1478ad4831ebc45
+/agent-note-sdk-session-tree-settlement/problem:
+  en: b4400fe8de092864
+  zh: bca1c5b9ed139d9c
+/agent-note-sdk-session-tree-settlement/decision:
+  en: 40b30848200be085
+  zh: 8efedf288ad6b79e
+/agent-note-sdk-session-tree-settlement/alternatives-considered:
+  en: 3ff23718d54f955c
+  zh: 697a155845624546
+/agent-note-sdk-session-tree-settlement/consequences:
+  en: 9eba77c58f508c93
+  zh: 69989088adfb41f9

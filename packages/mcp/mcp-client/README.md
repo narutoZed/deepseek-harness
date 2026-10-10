@@ -27,6 +27,8 @@ English | [中文](README.zh.md)
 
 Add `dsh-mcp-client` when the model should call tools from an external MCP server as if they were native. Give each server a unique name and transport. The official SDK selects the 2026-07-28 protocol when available and falls back to supported legacy revisions. Choose stdio for a local program and Streamable HTTP for a service; stdio negotiation starts a temporary probe process before the serving process.
 
+Optional `config.requestMeta` travels in `tools/call.params._meta`, separately from model-authored arguments. It changes neither the tool schema nor its arguments. The host owns the immutable invocation-scoped metadata and recreates the runtime when it changes; transport credentials belong in URL/headers, not metadata.
+
 ### Minimal configuration
 
 Add one entry per server; nothing else is required. After the harness starts, the server's tools appear in the model's tool list.

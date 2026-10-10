@@ -8,6 +8,14 @@ Python subprocess SDK for driving DeepSeek Harness over newline-delimited JSON-R
 python -m pip install deepseek-harness-sdk
 ```
 
+`harness.client.respond_interaction(interaction_id, answers)` answers `interaction.request` notifications from an `on_notification` callback or a separate control thread. Each answer contains the question `id`, a `selected` list and optional `custom` text.
+
+`harness.capabilities` exposes the initialized runtime’s control support. When `approvalResponses` is true, `client.respond_approval(session_id, interaction_id, decision)` answers the exact `approval.request` with `approved` or `cancelled`; `approved` allows the requested operation once. Hosts present the question and authorize the session.
+
+`run_subagent(input, root_session_id=..., parent_session_id=..., child_session_id=..., request_id=...)` continues a native continuable child in its existing history and waits for root-tree settlement. Its optional `on_accepted` callback receives the inbox id before settlement. `client.subagent_prompt()` returns admission immediately, `client.interrupt_subagent()` interrupts only that child, and `client.is_session_live()` checks a parent under its root. These operations require `subagentControl`; the high-level waiter also requires `sessionTreeSettled`. The [wire protocol](../../packages/sdk/protocol/README.md) defines ancestry, parent availability and in-process retry limits.
+
+Notification subscriptions support `next(timeout_seconds=...)`, `pending_count`, and `acknowledge()`. Consumers using `pending_count` to drain a persistent observer must acknowledge each consumed notification after processing it; ordinary consumers may omit accounting.
+
 ## Optional Office operations
 
 Download the Office runtime explicitly, then call the local API without an agent, Session, model request, API key, or Harness home:
@@ -50,6 +58,15 @@ print(result.final_response)
 
 `DeepSeekHarness` starts lazily and reuses its runtime until `close()` or context-manager exit. The initial profile handshake has an independent 30-second default bound through `initialize_timeout_seconds`; ordinary turns remain unbounded unless `request_timeout_seconds` is set. A timeout names the selected profile and includes retained runtime diagnostics. `cwd` is the agent workspace; `runtime_cwd` independently selects the subprocess working directory. Both become absolute before launch. `provider`, `model`, optional `reasoning_effort`, and optional positive `max_tokens` are sent during JSON-RPC initialization. `base_url` and `api_key` explicitly override `DEEPSEEK_BASE_URL` and `DEEPSEEK_API_KEY` in the child environment.
 
+<a id="running-session-steering"></a>
+When the runtime advertises `capabilities.sessionTreeSettled`, `Session.run()` and `DeepSeekHarness.run()` default to waiting for `session.settled`, including native descendant preparation, active runs, and queued parent follow-up turns. Pass `wait_for_subagents=False` to return at the first root idle. Older runtimes without the capability retain first-idle behavior. Settlement does not replace resource teardown through `close()`.
+
+Trusted hosts call `client.session_export(session_id, turn=1, max_bytes=67108864, ended_at=...)`, then another runtime’s `client.session_fork(new_session_id, snapshot, max_bytes=67108864)`. Source history is unchanged; attachments are copied through storage capabilities and the target is a durable seeded conversation. The host authorizes source and destination before calling these methods.
+
+## Running-session steering
+
+`client.session_steer(session_id, blocks, request_id=...)` returns the admitted inbox id for an active session. `session_prompt` and high-level `run` accept optional `request_id` for queued-input correlation. Steering requires the matching runtime version.
+
 ## Customize plugins
 
 Persistent customization belongs to a `dsh` profile. Initialize the shipped SDK profile and install an external bundle with the runtime wheel's `dsh` command:
@@ -81,7 +98,7 @@ The shipped `sdk-minimal` profile is a standalone explicit tree rather than an o
 
 ## Results and notifications
 
-`Session.run()` owns an activity interval from its prompt's durable inbox receipt through the next whole-agent idle and returns `RunResult(session_id, final_response, finish_reason, events, notifications)`. `final_response` is the last committed root-session assistant text in the interval. `finish_reason` is the `kind` of the last root-session `turn/end`, such as `completed`, `max-tokens`, or `error`, and is `None` when no turn ended. A `turn/end` without a string `data.reason.kind` violates the protocol and raises `SdkProtocolError`.
+`Session.run()` owns an activity interval from its prompt's durable inbox receipt through the negotiated activity boundary and returns `RunResult(session_id, final_response, finish_reason, events, notifications)`. `final_response` is the last committed root-session assistant text in the interval. `finish_reason` is the `kind` of the last root-session `turn/end`, such as `completed`, `max-tokens`, or `error`, and is `None` when no turn ended. A `turn/end` without a string `data.reason.kind` violates the protocol and raises `SdkProtocolError`.
 
 `HarnessClient` retains discovered subagent ancestry for the runtime process lifetime. During `Session.run()`, `RunResult.notifications` and `on_notification` receive the root session and known descendants in wire order. `RunResult.events` contains root-session events only, so descendant output cannot replace the root response. The low-level `session_prompt()` returns the queued message id immediately; callers that bypass `Session.run()` own the later activity boundary.
 

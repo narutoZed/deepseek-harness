@@ -42,7 +42,7 @@
           },
           {
             "type": "text",
-            "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"{{cwd}}\"."
+            "text": "权限：\n\nCurrent working directory: \"{{cwd}}\"."
           }
         ]
       }
@@ -91,7 +91,7 @@
           },
           {
             "type": "text",
-            "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"{{cwd}}\"."
+            "text": "权限：\n\nCurrent working directory: \"{{cwd}}\"."
           }
         ]
       },
@@ -159,7 +159,7 @@
           },
           {
             "type": "text",
-            "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"{{cwd}}\"."
+            "text": "权限：\n\nCurrent working directory: \"{{cwd}}\"."
           }
         ]
       },

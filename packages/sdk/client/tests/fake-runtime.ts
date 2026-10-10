@@ -249,6 +249,25 @@ reader.on('line', (line) => {
   if (frame.method === undefined || frame.id === undefined) return
   const respond = (result: object): void => { write({ jsonrpc: '2.0', id: frame.id, result }) }
   switch (frame.method) {
+    case 'session/steer':
+      if (env.FAKE_RECORD_STEER !== undefined) writeFileSync(env.FAKE_RECORD_STEER, JSON.stringify(frame.params))
+      respond(env.FAKE_MALFORMED_STEER === undefined ? { messageId: 'steer-message' } : {})
+      return
+    case 'approval/respond':
+    case 'subagent/prompt':
+    case 'subagent/interrupt':
+    case 'session/is-live':
+      if (env.FAKE_RECORD_CONTROL !== undefined) writeFileSync(env.FAKE_RECORD_CONTROL, JSON.stringify(frame))
+      respond(env.FAKE_CONTROL_RESPONSE === undefined
+        ? frame.method === 'subagent/prompt' ? { messageId: 'child-message', replayed: false }
+          : frame.method === 'session/is-live' ? { live: true } : { accepted: true }
+        : JSON.parse(env.FAKE_CONTROL_RESPONSE) as object)
+      return
+    case 'interaction/respond':
+      respond(env.FAKE_MALFORMED_INTERACTION === undefined
+        ? { accepted: frame.params?.interactionId === 'question-1' && Array.isArray(frame.params.answers) }
+        : { accepted: 'yes' })
+      return
     case 'initialize':
       if (typeof frame.params?.cwd === 'string') originCwd = frame.params.cwd
       if (env.FAKE_RECORD_INIT !== undefined) appendFileSync(env.FAKE_RECORD_INIT, `${JSON.stringify(frame.params)}\n`)
@@ -281,7 +300,16 @@ reader.on('line', (line) => {
         respond({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: process.cwd() } })
         return
       }
-      respond({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } })
+      respond({
+        serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' },
+        ...env.FAKE_MALFORMED_CAPABILITIES !== undefined ? {
+          capabilities: env.FAKE_MALFORMED_CAPABILITIES === 'container' ? 'invalid' : { sessionTreeSettled: 'yes' },
+        } : env.FAKE_CONTROL_CAPABILITIES !== undefined ? {
+          capabilities: { approvalResponses: true, subagentControl: true, sessionTreeSettled: true },
+        } : env.FAKE_TREE_SETTLEMENT === undefined ? {} : {
+          capabilities: { sessionTreeSettled: env.FAKE_TREE_SETTLEMENT === '1' },
+        },
+      })
       return
     case 'session/working-directory/get':
     case 'session/working-directory/set': {
@@ -308,7 +336,7 @@ reader.on('line', (line) => {
           id: messageId,
           role: 'user',
           content: [],
-          source: { kind: 'user' },
+          source: { kind: 'user', ...frame.params?.requestId === undefined ? {} : { rpcId: frame.params.requestId } },
         }],
       })
       notify('session.status', { sessionId, status: 'running' })
@@ -348,6 +376,16 @@ reader.on('line', (line) => {
       notify('session.status', { sessionId, status: 'idle' })
       settledSessions.add(sessionId)
       respond({ messageId })
+      if (env.FAKE_TREE_SETTLEMENT === '1') {
+        setImmediate(() => {
+          notify('session.status', { sessionId, status: 'running' })
+          runTurn(sessionId)
+          notify('session.status', { sessionId, status: 'idle' })
+          notify('session.settled', { sessionId,
+            ...(env.FAKE_SETTLEMENT_ERROR === undefined ? {} : { error: env.FAKE_SETTLEMENT_ERROR === 'malformed' ? false : env.FAKE_SETTLEMENT_ERROR }),
+          })
+        })
+      }
       return
     }
     case 'session/wait':

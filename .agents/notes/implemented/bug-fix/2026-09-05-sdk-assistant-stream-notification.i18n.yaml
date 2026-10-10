@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-05-sdk-assistant-stream-notification.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-sdk-assistant-stream-notification.md
+/agent-note-sdk-assistant-stream-notifications:
+  en: f87066e5fb78f077
+  zh: 3206ede7689b47fa
+/agent-note-sdk-assistant-stream-notifications/problem:
+  en: f5199f23a2a436c7
+  zh: 76d2f443c2f57284
+/agent-note-sdk-assistant-stream-notifications/decision:
+  en: 4bb25e767d0ce239
+  zh: b9d986d01c0d1bc3
+/agent-note-sdk-assistant-stream-notifications/alternatives-considered:
+  en: 3e1a3f16cb21b605
+  zh: 47c9c7a53ab0f758
+/agent-note-sdk-assistant-stream-notifications/consequences:
+  en: 64442892a4c983d9
+  zh: 15cf84254f4a6e0f

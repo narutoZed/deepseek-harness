@@ -42,6 +42,8 @@ type SandboxEnforcement = 'full' | 'partial'
 
 The complete execution policy is resolved and carried per capability call. It includes `danger-full-access` so a consumer can resolve policy once before deciding whether to bypass confinement. Normal tool calls derive `workspaceRoot` from the calling session's immutable cwd; deployment configuration is the agentless fallback. The resolver preserves absolute execution-world spelling. Enforcing providers canonicalize the root where the files exist, so a cwd containing `symlink/..` identifies the directory where the paired subprocess provider actually runs.
 
+Deployment-owned additional writable roots accompany the resolved policy. The shared root resolver authorizes them only in `workspace-write`; the policy service owns registration and revocation.
+
 ```ts type-equiv
 /**
  * The complete file-effect policy resolved for one capability call. The root
@@ -53,6 +55,8 @@ interface SandboxExecutionPolicy {
   mode: SandboxMode
   /** Absolute root directory `workspace-write` may write under. */
   workspaceRoot: string
+  /** Additional absolute directories authorized by the deployment under workspace-write. */
+  additionalWritableRoots?: readonly string[]
   /**
    * Opaque identity of the calling session (the branded `dsh-session`
    * SessionId). Backends key per-session state off it (e.g. windows-acl gives
@@ -206,6 +210,15 @@ The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default mo
  * @returns the fully resolved per-call mode and absolute workspace root.
  */
 resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy
+
+/**
+ * Authorize deployment-owned directories without changing the session's mode.
+ * Register through the contributing plugin's effect so disposal revokes its grant.
+ * Callers must keep these roots and their ancestors outside model-controlled renames.
+ * @param roots - existing absolute directory paths from trusted plugin configuration.
+ * @returns disposer revoking this registration; throws for missing directories or filesystem roots.
+ */
+registerWritableRoots(roots: readonly string[]): () => void
 
 /**
  * Read the session override without applying the deployment default.

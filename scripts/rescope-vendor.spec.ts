@@ -1,7 +1,7 @@
 /** Recorded npm evidence stays intact while authored files and exact edits remain checked. */
 
 import { describe, expect, it } from 'vitest'
-import { exactEditState, isRescopeExcluded } from './rescope-vendor.ts'
+import { exactEditState, isRescopeExcluded, rewriteRescopeTokens } from './rescope-vendor.ts'
 
 const ANCHOR = '\n## Sync procedure'
 const INSERTED = `\n15. **rescope**: one log entry.\n${ANCHOR}`
@@ -49,5 +49,33 @@ describe('exactEditState', () => {
     // A moved or partially applied site: neither state is complete.
     expect(exactEditState('a = 1\nb = 2\n', 'a = 1', 'b = 2', 1)).toBe('invalid')
     expect(exactEditState('x\n', 'a = 1', 'b = 2', 1)).toBe('invalid')
+  })
+})
+
+
+describe('product identifiers in rescope checks', () => {
+  it.each([
+    'packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx',
+    'docs/user/guide/schedule.md',
+    'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.md',
+    'packages/bundle/web-app/cordis.patch.yml',
+  ])('preserves the cordis preset in %s while checking other package names', (file) => {
+    const text = "'cordis' and 'schemastery'"
+    expect(rewriteRescopeTokens(text, file)).toEqual({ text: "'cordis' and '@deepseek-ai/schemastery'", lines: 1 })
+  })
+
+  it.each([
+    'packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts',
+    'snapshots/session/cordis-inspect-liveness/client-fixture.mjs',
+    'snapshots/session/cordis-inspect-timeout/client-fixture.mjs',
+  ])('preserves the event domain in %s', (file) => {
+    const text = "ctx.on('cordis/inspect-query', listener)"
+    expect(rewriteRescopeTokens(text, file)).toEqual({ text, lines: 0 })
+  })
+
+  it('continues to detect bare package imports outside the exact product-data sites', () => {
+    expect(rewriteRescopeTokens("import { Context } from 'cordis'", 'packages/sdk/server/src/server.ts'))
+      .toEqual({ text: "import { Context } from '@deepseek-ai/cordis'", lines: 1 })
+    expect(isRescopeExcluded('scripts/rescope-vendor.spec.ts')).toBe(true)
   })
 })

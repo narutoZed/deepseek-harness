@@ -30,6 +30,7 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  requestMeta?: Record<string, unknown>
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -136,7 +137,9 @@ export async function syncTools(
       outputSchema: tool.outputSchema,
       taskRequired: tool.execution?.taskSupport === 'required',
       call: (args, execution) => client.callTool(
-        { name: tool.name, arguments: args },
+        { name: tool.name, arguments: args,
+          ...(opts.requestMeta === undefined ? {} : { _meta: opts.requestMeta }),
+        },
         { signal: execution.signal, timeout: opts.toolCallTimeoutMs, toolDefinition: tool },
       ),
     }))

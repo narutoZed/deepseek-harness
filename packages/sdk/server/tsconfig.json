@@ -37,6 +37,21 @@
     },
     {
       "path": "../../session/working-directory"
+    },
+    {
+      "path": "../../interaction/user-questions"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../../interaction/user-approval"
+    },
+    {
+      "path": "../../session-query/session-query"
+    },
+    {
+      "path": "../../session/session-projection"
     }
   ]
 }

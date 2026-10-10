@@ -13,6 +13,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
   SubprocessHandle,
@@ -359,6 +360,24 @@ function expectedFailureDiagnostic(
 }
 
 describe('task admission and package contracts', () => {
+  it.each(['read-only', 'workspace-write'] as const)('refuses a %s directory policy before product startup', async (mode) => {
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    await mountWorkingDirectoryFixture(ctx)
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    await ctx.plugin(SandboxPolicyService, { mode })
+    vi.spyOn(ctx.sandboxPolicy, 'resolve').mockReturnValue({ mode, workspaceRoot: process.cwd(), additionalWritableRoots: [process.cwd()] })
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+    await ctx.plugin(codex, {})
+    try {
+      await expect(startExternalActivation(ctx, 'codex', request())).rejects.toThrow('cannot enforce additional writable directories')
+      expect(spawn).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('ships the provider with a global delegation tool', () => {
     const root = fileURLToPath(new URL('..', import.meta.url))
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {

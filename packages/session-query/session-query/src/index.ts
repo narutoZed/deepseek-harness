@@ -80,6 +80,7 @@ export {
   materializeSessionResultFilters,
 } from './filters.ts'
 export { assertSessionHeadersCompatible } from './sources.ts'
+export { SessionObservationReader } from './observation.ts'
 export type { SessionObservation, SessionObservationOptions } from './observation.ts'
 
 declare module '@deepseek-ai/cordis' {

@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-05-sdk-session-forks.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-sdk-session-forks.md
+/agent-note-portable-sdk-session-forks:
+  en: 8bf486054cd3697f
+  zh: c9a499495da49889
+/agent-note-portable-sdk-session-forks/problem:
+  en: f8409584af96ded3
+  zh: acf7218dd53650e7
+/agent-note-portable-sdk-session-forks/decision:
+  en: bfa3aaaa98d5cf4b
+  zh: 53294a6be1a15d93
+/agent-note-portable-sdk-session-forks/alternatives-considered:
+  en: d6dd106675975832
+  zh: 67ebe347f3150b09
+/agent-note-portable-sdk-session-forks/consequences:
+  en: c9fd42a781b0e0e2
+  zh: 98e42446816b07ea

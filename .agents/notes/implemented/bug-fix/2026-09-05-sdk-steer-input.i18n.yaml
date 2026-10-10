@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-05-sdk-steer-input.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-sdk-steer-input.md
+/agent-note-sdk-next-step-input:
+  en: cbf9ec0069111f7b
+  zh: b687d06382115001
+/agent-note-sdk-next-step-input/problem:
+  en: 720c8b82e96806ba
+  zh: f67aefb9f0665939
+/agent-note-sdk-next-step-input/decision:
+  en: 3d4d1513d5d9503e
+  zh: 17152bea57aeb3ff
+/agent-note-sdk-next-step-input/alternatives-considered:
+  en: 0f55e99f9ff79485
+  zh: e4feea5ff29aeb22
+/agent-note-sdk-next-step-input/consequences:
+  en: fa82f3d93fac93ce
+  zh: fef6edb29e719949

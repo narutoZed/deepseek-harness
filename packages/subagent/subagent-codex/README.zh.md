@@ -80,6 +80,8 @@ Bundle 将 `tool-subagent-codex` 作为 Host 条目插入，因此 `subagent_cod
 
 省略 optional dependencies、当前平台不受支持或所选载荷缺失的安装会让提供方保持休眠，并在第一次委派时于 `initialize` 阶段以安全 `unknown` 类别和任何已观测进程结果失败；不存在宿主 CLI 回退。原始 wrapper 文本只保留在 Host stderr。被取消的运行以 `aborted` 结算。
 
+此提供方不会将 DSH 的额外可写目录授权转换为产品自身的沙箱配置。当父会话策略包含这些授权且处于受限模式时，会在启动产品进程之前拒绝委派。此类会话应使用原生本地子代理；非受限会话保留配置的产品权限行为。
+
 -----
 
 <a id="understand-the-implementation"></a>

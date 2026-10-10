@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-05-sdk-human-interactions.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-05-sdk-human-interactions.md
+/agent-note-sdk-human-interactions:
+  en: e5844e9cbb7b4a4c
+  zh: 1dc4edf4d1d7e9e0
+/agent-note-sdk-human-interactions/problem:
+  en: 796a9fc62d1d9d07
+  zh: 6b9fc8afb7e7d3f9
+/agent-note-sdk-human-interactions/decision:
+  en: b19bf694ef9cfa6c
+  zh: 17f4d46fe9d65836
+/agent-note-sdk-human-interactions/alternatives-considered:
+  en: 17d1e213961d84a2
+  zh: e717ec3e6c6abe0e
+/agent-note-sdk-human-interactions/consequences:
+  en: 7c74be18d6f7bdd6
+  zh: cc8a59a9b7dff0cf

@@ -1,7 +1,7 @@
 /**
  * High-level run API over {@link HarnessClient}: `DeepSeekHarness` owns one
  * runtime subprocess across many sessions; `HarnessSession.run` sends a
- * prompt and settles when the whole agent next becomes idle.
+ * prompt and settles at the runtime-negotiated activity boundary.
  *
  * @module @deepseek-ai/dsh-sdk-client/api
  */
@@ -29,6 +29,7 @@ export class DeepSeekHarness implements AsyncDisposable {
   private readonly maxTokens: number | undefined
   private initialized: Promise<void> | undefined
   private closed = false
+  private treeSettlement = false
 
   /** @param options - dsh launch configuration plus the session route, effort, and output cap. */
   constructor(options?: DeepSeekHarnessOptions)
@@ -57,6 +58,14 @@ export class DeepSeekHarness implements AsyncDisposable {
   }
 
   /**
+   * Whether the initialized runtime supplies native session-tree settlement.
+   * @returns false before initialization or with an older runtime.
+   */
+  get supportsSessionTreeSettlement(): boolean {
+    return this.treeSettlement
+  }
+
+  /**
    * Start the subprocess and perform the `initialize` handshake once. On
    * failure, successful SDK-owned cleanup reaps the runtime and installs a
    * fresh client (`HarnessClient.close` is permanent), so a later call retries
@@ -70,13 +79,14 @@ export class DeepSeekHarness implements AsyncDisposable {
     this.initialized ??= (async () => {
       try {
         this.clientInstance.start()
-        await this.clientInstance.initialize({
+        const initialized = await this.clientInstance.initialize({
           cwd: this.cwd,
           provider: this.provider,
           model: this.model,
           ...this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort },
           ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
         })
+        this.treeSettlement = initialized.capabilities?.sessionTreeSettled === true
       } catch (error) {
         this.initialized = undefined
         try {
@@ -150,8 +160,12 @@ export function createProcessDeepSeekHarness(
 
 /** Per-run options: target session and streaming observer. */
 export interface RunOptions {
+  /** Wait for native descendant runs and parent continuation by default; false keeps the first root idle. */
+  waitForSubagents?: boolean
   /** Session id to run on; omitted mints a fresh session per call. */
   sessionId?: string
+  /** Caller identity retained in the prompt's durable user source. */
+  requestId?: string
   /** Observer invoked with every notification for this session tree, in wire order. */
   onNotification?: (notification: HarnessNotification) => void
 }
@@ -186,15 +200,16 @@ export class HarnessSession {
   }
 
   /**
-   * Queue one prompt, then observe the whole session through its next idle.
+   * Queue one prompt, then observe its negotiated session activity interval.
    * @param input - prompt text, or content blocks sent verbatim.
    * @param options - optional per-notification observer.
    * @returns the owned activity interval; rejects on transport loss, timeout,
    * or a protocol error.
    */
-  async run(input: string | SdkPromptContentBlock[], options?: Pick<RunOptions, 'onNotification'>): Promise<RunResult> {
+  async run(input: string | SdkPromptContentBlock[], options?: Pick<RunOptions, 'onNotification' | 'requestId' | 'waitForSubagents'>): Promise<RunResult> {
     await this.harness.start()
     const client = this.harness.client
+    const waitForTree = options?.waitForSubagents !== false && this.harness.supportsSessionTreeSettlement
     const contentBlocks = normalizeInput(input)
     const events: SessionEvent[] = []
     const notifications: HarnessNotification[] = []
@@ -215,7 +230,7 @@ export class HarnessSession {
       options?.onNotification?.(notification)
     }
     try {
-      const messageId = await client.prompt(this.id, contentBlocks)
+      const messageId = await client.prompt(this.id, contentBlocks, options?.requestId)
       let received = false
       while (true) {
         const notification = await subscription.next()
@@ -226,9 +241,14 @@ export class HarnessSession {
           received = true
         }
         collect(notification)
-        if (notification.method === 'session.status'
-          && notification.params.sessionId === this.id
-          && notification.params.status === 'idle') break
+        if (notification.method === 'session.settled' && notification.params.sessionId === this.id
+          && notification.params.error !== undefined) {
+          if (typeof notification.params.error !== 'string') throw new SdkProtocolError('session.settled returned an invalid error')
+          throw new SdkProtocolError(`Session completion failed: ${notification.params.error}`)
+        }
+        if (notification.params.sessionId === this.id
+          && (waitForTree ? notification.method === 'session.settled'
+            : notification.method === 'session.status' && notification.params.status === 'idle')) break
       }
     } finally {
       subscription.close()

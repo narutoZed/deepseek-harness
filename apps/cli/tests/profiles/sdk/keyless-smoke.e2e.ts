@@ -28,6 +28,11 @@ function messagesResponse(content: Record<string, unknown>, stopReason: 'end_tur
   ].map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('')
 }
 
+/** One protocol event emitted by the local Messages fixtures. */
+function messagesFrame(event: { type: string; [key: string]: unknown }): string {
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
+}
+
 function waitForLine(
   lines: string[],
   predicate: (value: Record<string, unknown>) => boolean,
@@ -532,4 +537,407 @@ it.each(['unset', 'empty', 'bundled', 'full', 'python-only', 'python-only-no-cli
   expect(exit.signal).toBeUndefined()
   expect(exit.exitCode, stderr).toBe(0)
   await expect(readFile(join(home, 'dsh-runtimes', 'dsh-primary-runtime', 'runtime.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+describe('SDK durable session restart', () => {
+  it('keeps the first conversation when a replacement process prompts the same session', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-resume-'))
+    const requests: Record<string, unknown>[] = []
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        requests.push(JSON.parse(body) as Record<string, unknown>)
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.end(messagesResponse({ type: 'text', text: 'answer' }, 'end_turn'))
+      })
+    })
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      for (const prompt of ['first question', 'second question']) {
+        const child = execa(launch.command, [...launch.args, '--profile', 'sdk'], {
+          cwd: repoRoot,
+          env: {
+            DSH_HOME: join(root, '.dsh'), DSH_TELEMETRY_DISABLED: '1',
+            DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+          },
+          timeout: 35_000, killSignal: 'SIGKILL', reject: false,
+        })
+        const lines: string[] = []
+        let buffer = ''
+        let stderr = ''
+        child.stdout.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString('utf8')
+          const complete = buffer.split('\n')
+          buffer = complete.pop() ?? ''
+          lines.push(...complete)
+        })
+        child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
+        const send = (id: number, method: string, params?: object): void => {
+          child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
+        }
+        try {
+          send(1, 'initialize', { cwd: root, provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+          const initialized = await waitForLine(lines, value => value.id === 1, () => stderr)
+          expect(initialized.error, stderr).toBeUndefined()
+          expect(initialized).toHaveProperty('result')
+          send(2, 'session/prompt', { sessionId: 'durable', contentBlocks: [{ type: 'text', text: prompt }] })
+          expect(await waitForLine(lines, value => value.id === 2, () => stderr)).toHaveProperty('result.messageId')
+          await waitForLine(lines, value => value.method === 'session.status'
+            && (value.params as { status?: string })?.status === 'idle', () => stderr)
+          send(3, 'shutdown')
+          expect(await waitForLine(lines, value => value.id === 3, () => stderr)).toHaveProperty('result')
+          child.stdin.end()
+          const exit = await child
+          expect(exit.timedOut).toBe(false)
+          expect(exit.signal).toBeUndefined()
+          expect(exit.exitCode).toBe(0)
+        } finally {
+          child.kill('SIGKILL')
+          await child
+        }
+      }
+      expect(requests).toHaveLength(2)
+      expect(JSON.stringify(requests[1]?.messages)).toContain('first question')
+      expect(JSON.stringify(requests[1]?.messages)).toContain('second question')
+    } finally {
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('SDK human interaction', () => {
+  it('continues the real ask_user_question tool after a typed SDK answer', async () => {
+    const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-interaction-'))
+    const patch = join(root, 'questions.patch.yml')
+    await writeFile(patch, JSON.stringify([{ insert: [{
+      id: 'sdk-question-test-tool',
+      name: join(repoRoot, 'packages/interaction/tool-ask-user/lib/index.js'),
+    }] }]))
+    const requests: Record<string, unknown>[] = []
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        requests.push(JSON.parse(body) as Record<string, unknown>)
+        const first = requests.length === 1
+        const content = first
+          ? { type: 'tool_use', id: 'question-call', name: 'ask_user_question', input: { questions: [{ id: 'task', question: 'Which task?' }] } }
+          : { type: 'text', text: 'The selected task is recorded.' }
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.end(messagesResponse(content, first ? 'tool_use' : 'end_turn'))
+      })
+    })
+    let harness: InstanceType<typeof DeepSeekHarness> | undefined
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, '.dsh'), profile: 'sdk', patches: [patch], env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      const client = harness.client
+      const responses: Promise<boolean>[] = []
+      const result = await harness.run('Ask me which task to do', { sessionId: 'questions', onNotification: (notification) => {
+        if (notification.method === 'interaction.request') {
+          const interactionId = notification.params.interactionId
+          if (typeof interactionId !== 'string') throw new Error('interaction has no id')
+          responses.push(client.respondInteraction(interactionId, [
+            { id: 'task', selected: [], custom: 'Inspect the SDK' },
+          ]))
+        }
+      } })
+      expect(await Promise.all(responses), JSON.stringify(result.events.filter(event => event.type === 'tool/result'))).toEqual([true])
+      expect(result.finalResponse).toBe('The selected task is recorded.')
+      expect(JSON.stringify(requests[1]?.messages)).toContain('Inspect the SDK')
+    } finally {
+      await harness?.close()
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('SDK next-step steering', () => {
+  it('delivers identified steering while the first model response is still pending', async () => {
+    const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-steer-'))
+    const firstRequest = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const requests: Record<string, unknown>[] = []
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        requests.push(JSON.parse(body) as Record<string, unknown>)
+        const send = (): void => {
+          response.writeHead(200, { 'content-type': 'text/event-stream' })
+          response.end(messagesResponse({ type: 'text', text: 'done' }, 'end_turn'))
+        }
+        if (requests.length === 1) {
+          firstRequest.resolve(undefined)
+          void release.promise.then(send)
+        } else send()
+      })
+    })
+    let harness: InstanceType<typeof DeepSeekHarness> | undefined
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, '.dsh'), profile: 'sdk', env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      const run = harness.run('Start work', { sessionId: 'main', requestId: 'root-input' })
+      // A failed control assertion still closes the runtime and settles this run.
+      void run.catch(() => undefined)
+      await firstRequest.promise
+      const messageId = await harness.client.steer('main', [{ type: 'text', text: 'new direction' }], 'steer-input')
+      expect(messageId).toBeTypeOf('string')
+      expect(await harness.client.steer('main', [{ type: 'text', text: 'new direction' }], 'steer-input')).toBe(messageId)
+      release.resolve(undefined)
+      const result = await run
+      expect(requests).toHaveLength(2)
+      expect(JSON.stringify(requests[1]?.messages)).toContain('new direction')
+      expect(result.events.some(event => event.type === 'agent/inbox/spliced'
+        && event.data.inserted.some(message => message.id === messageId))).toBe(true)
+    } finally {
+      release.resolve(undefined)
+      await harness?.close()
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('SDK assistant streaming', () => {
+  it('publishes live text before the model response and durable message finish', async () => {
+    const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+    const { vi } = await import('vitest')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-stream-'))
+    const release = Promise.withResolvers<undefined>()
+    const modelServer = createServer((request, response) => {
+      request.resume()
+      request.on('end', () => {
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.write(messagesFrame({ type: 'message_start', message: { id: 'live-stream', model: 'deepseek-v4-pro', usage: { input_tokens: 3, output_tokens: 0 } } }))
+        response.write(messagesFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }))
+        response.write(messagesFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'first' } }))
+        void release.promise.then(() => {
+          response.write(messagesFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ' second' } }))
+          response.write(messagesFrame({ type: 'content_block_stop', index: 0 }))
+          response.write(messagesFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 2 } }))
+          response.end(messagesFrame({ type: 'message_stop' }))
+        })
+      })
+    })
+    let harness: InstanceType<typeof DeepSeekHarness> | undefined
+    let run: ReturnType<InstanceType<typeof DeepSeekHarness>['run']> | undefined
+    let liveChunk: unknown
+    let durable = false
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, '.dsh'), profile: 'sdk', env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      run = harness.run('Stream a short answer', { sessionId: 'stream', onNotification: (notification) => {
+        if (notification.method === 'session.assistant_stream') {
+          const frame = notification.params.frame as { type?: string; chunk?: unknown }
+          if (frame.type === 'chunk') liveChunk = frame.chunk
+        }
+        if (notification.method === 'session.event'
+          && (notification.params.event as { type?: string }).type === 'assistant/message') durable = true
+      } })
+      void run.catch(() => undefined)
+      await vi.waitFor(() => { expect(liveChunk).toMatchObject({ type: 'text-delta', text: 'first' }) }, { timeout: 30_000 })
+      expect(durable).toBe(false)
+      release.resolve(undefined)
+      expect((await run).finalResponse).toBe('first second')
+      expect(durable).toBe(true)
+    } finally {
+      release.resolve(undefined)
+      await harness?.close()
+      await run?.catch(() => undefined)
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('SDK subagent metadata', () => {
+  it('reports structured metadata for managed native children without parsing tool receipts', async () => {
+    const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-metadata-'))
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        const messages = (JSON.parse(body) as { messages: { role: string; content: unknown }[] }).messages
+        const child = messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('metadata-child'))
+        const followup = messages.some(message => Array.isArray(message.content)
+          && message.content.some((block: unknown) => block !== null && typeof block === 'object'
+            && 'type' in block && block.type === 'tool_result'))
+        const content = child || followup
+          ? { type: 'text', text: child ? 'child answer' : 'root done' }
+          : { type: 'tool_use', id: 'delegate', name: 'subagent', input: {
+            description: 'Inspect native SDK metadata', prompt: 'metadata-child',
+          } }
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.end(messagesResponse(content, child || followup ? 'end_turn' : 'tool_use'))
+      })
+    })
+    let harness: InstanceType<typeof DeepSeekHarness> | undefined
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, '.dsh'), profile: 'sdk', env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      const result = await harness.run('metadata-root', { sessionId: 'root' })
+      expect(result.finalResponse).toBe('root done')
+      const started = result.notifications.find(notification => notification.method === 'subagent.started')
+      expect(started?.params.parentSessionId).toBe('root')
+      expect(started?.params).toMatchObject({
+        label: 'Inspect native SDK metadata', mode: 'continuable', provider: 'spawn',
+      })
+      expect(started?.params.childSessionId).toBeTypeOf('string')
+      expect(started?.params).not.toHaveProperty('persona')
+      expect(started?.params).not.toHaveProperty('prompt')
+    } finally {
+      await harness?.close()
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('SDK session-tree settlement', () => {
+  it('waits past root idle for a background child and the parent synthesis', async () => {
+    const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+    const { vi } = await import('vitest')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-settlement-'))
+    const release = Promise.withResolvers<undefined>()
+    let rootIdle = false
+    let completed = false
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        const messages = (JSON.parse(body) as { messages: { role: string; content: unknown }[] }).messages
+        const child = messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('settlement-child'))
+        const followup = messages.some(message => Array.isArray(message.content)
+          && message.content.some((block: unknown) => block !== null && typeof block === 'object'
+            && 'type' in block && block.type === 'tool_result'))
+        const hasAnswer = messages.some(message => JSON.stringify(message.content).includes('finished-child-answer'))
+        const content = child || followup
+          ? { type: 'text', text: child ? 'finished-child-answer' : hasAnswer ? 'final parent synthesis' : 'waiting for child' }
+          : { type: 'tool_use', id: 'delegate', name: 'subagent', input: {
+            description: 'Wait for a delayed child', prompt: 'settlement-child',
+          } }
+        const send = (): void => {
+          response.writeHead(200, { 'content-type': 'text/event-stream' })
+          response.end(messagesResponse(content, child || followup ? 'end_turn' : 'tool_use'))
+        }
+        if (child) void release.promise.then(send)
+        else send()
+      })
+    })
+    let harness: InstanceType<typeof DeepSeekHarness> | undefined
+    try {
+      await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+      const address = modelServer.address()
+      if (address === null || typeof address === 'string') throw new Error('no model port')
+      harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, '.dsh'), profile: 'sdk', env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      const run = harness.run('settlement-root', { sessionId: 'root', onNotification(notification) {
+        if (notification.method === 'session.status' && notification.params.sessionId === 'root' && notification.params.status === 'idle') rootIdle = true
+      } })
+      void run.then(() => { completed = true }, () => { completed = true })
+      await vi.waitFor(() => { expect(rootIdle).toBe(true) }, { timeout: 30_000 })
+      expect(completed).toBe(false)
+      release.resolve(undefined)
+      const result = await run
+      expect(result.finalResponse).toBe('final parent synthesis')
+      expect(result.notifications.at(-1)?.method).toBe('session.settled')
+      expect(result.events.filter(event => event.type === 'turn/end')).toHaveLength(2)
+    } finally {
+      release.resolve(undefined)
+      await harness?.close()
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+it('exports a cold SDK session and continues its portable fork through the shipped profile', async () => {
+  const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client')
+  const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-portable-fork-'))
+  const requests: Record<string, unknown>[] = []
+  const model = createServer((request, response) => {
+    let body = ''
+    request.setEncoding('utf8').on('data', (chunk: string) => { body += chunk })
+    request.on('end', () => {
+      requests.push(JSON.parse(body) as Record<string, unknown>)
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      response.end(messagesResponse({ type: 'text', text: 'fork reply' }, 'end_turn'))
+    })
+  })
+  const harnesses: InstanceType<typeof DeepSeekHarness>[] = []
+  try {
+    await new Promise<void>((resolve) => { model.listen(0, '127.0.0.1', resolve) })
+    const address = model.address()
+    if (address === null || typeof address === 'string') throw new Error('model fixture did not bind')
+    const open = (home: string) => {
+      const harness = new DeepSeekHarness({ cwd: root, dshHome: join(root, home), profile: 'sdk', env: {
+        ...process.env, DEEPSEEK_API_KEY: 'keyless-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+        DSH_TELEMETRY_DISABLED: '1',
+      } })
+      harnesses.push(harness)
+      return harness
+    }
+    const source = open('source-home')
+    await source.run('fork-first-marker', { sessionId: 'source' })
+    const params = { sessionId: 'source', turn: 1, maxBytes: 1_000_000 }
+    const snapshot = await source.client.request('session/export', params)
+    expect(snapshot).toMatchObject({ sourceSessionId: 'source', events: expect.any(Array) })
+    await source.run('fork-later-marker', { sessionId: 'source' })
+    await source.close()
+    const beforeRead = requests.length
+    const reader = open('source-home')
+    await reader.start()
+    expect(await reader.client.request('session/export', params)).toEqual(snapshot)
+    expect(requests).toHaveLength(beforeRead)
+    await reader.close()
+    const target = open('target-home')
+    await target.start()
+    expect(await target.client.request('session/fork', { sessionId: 'branch', snapshot, maxBytes: 1_000_000 }))
+      .toMatchObject({ sessionId: 'branch' })
+    expect((await target.run('fork-follow-up', { sessionId: 'branch' })).finalResponse).toBe('fork reply')
+    const history = JSON.stringify(requests.at(-1)?.messages)
+    expect(history).toContain('fork-first-marker')
+    expect(history).toContain('fork-follow-up')
+    expect(history).not.toContain('fork-later-marker')
+  } finally {
+    await Promise.all(harnesses.map(harness => harness.close()))
+    await new Promise<void>((resolve) => { model.close(() => { resolve() }) })
+    await rm(root, { recursive: true, force: true })
+  }
 })

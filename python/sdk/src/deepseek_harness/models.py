@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeAlias
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StrictBool
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 JsonValue: TypeAlias = JsonScalar | dict[str, "JsonValue"] | list["JsonValue"]
@@ -28,5 +28,12 @@ class ServerInfo(BaseModel):
     version: str | None = None
 
 
+class RuntimeCapabilities(BaseModel):
+    sessionTreeSettled: StrictBool = False
+    approvalResponses: StrictBool = False
+    subagentControl: StrictBool = False
+
+
 class InitializeResponse(BaseModel):
     serverInfo: ServerInfo | None = None
+    capabilities: RuntimeCapabilities = Field(default_factory=RuntimeCapabilities)

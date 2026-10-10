@@ -8,6 +8,14 @@
 python -m pip install deepseek-harness-sdk
 ```
 
+`harness.client.respond_interaction(interaction_id, answers)` 可以在 `on_notification` 回调或独立控制线程中回答 `interaction.request` 通知。每条回答包含问题 `id`、`selected` 列表和可选的 `custom` 文本。
+
+`harness.capabilities` 提供初始化后运行时的控制能力。`approvalResponses` 为 true 时，`client.respond_approval(session_id, interaction_id, decision)` 使用 `approved` 或 `cancelled` 回复指定的 `approval.request`；`approved` 仅允许所请求的操作执行一次。宿主负责展示问题和会话授权。
+
+`run_subagent(input, root_session_id=..., parent_session_id=..., child_session_id=..., request_id=...)` 在原有历史中继续原生可续聊子会话，并等待根会话树活动结束。可选的 `on_accepted` 回调会在活动结束前收到 inbox id。`client.subagent_prompt()` 立即返回接收回执，`client.interrupt_subagent()` 只中断该子会话，`client.is_session_live()` 检查根会话范围内的父会话是否存活。这些操作需要 `subagentControl`，高层等待方法还需要 `sessionTreeSettled`。[协议说明](../../packages/sdk/protocol/README.zh.md)定义祖先关系、父会话可用性和进程内重试限制。
+
+通知订阅支持 `next(timeout_seconds=...)`、`pending_count` 和 `acknowledge()`。使用 `pending_count` 排空持续观察器的调用方必须在处理每条通知后确认消费；普通调用方可以不使用计数。
+
 ## 可选 Office 操作
 
 显式下载 Office 运行时后，即可调用本地 API，无需 agent、Session、模型请求、API key 或 Harness home：
@@ -50,6 +58,15 @@ print(result.final_response)
 
 `DeepSeekHarness` 延迟启动运行时，并在调用 `close()` 或退出上下文管理器前复用该进程。首次 profile 握手通过 `initialize_timeout_seconds` 使用独立的 30 秒默认上限；普通轮次在未设置 `request_timeout_seconds` 时仍不设上限。超时诊断会指明所选 profile，并包含保留的运行时诊断。`cwd` 是 agent workspace；`runtime_cwd` 独立选择子进程工作目录。两者都会在启动前转成绝对路径。`provider`、`model`、可选的 `reasoning_effort` 和可选的正整数 `max_tokens` 通过 JSON-RPC 初始化发送。`base_url` 与 `api_key` 会显式覆盖子进程环境中的 `DEEPSEEK_BASE_URL` 与 `DEEPSEEK_API_KEY`。
 
+<a id="running-session-steering"></a>
+当运行时声明 `capabilities.sessionTreeSettled` 时，`Session.run()` 和 `DeepSeekHarness.run()` 默认等待 `session.settled`，涵盖原生后代的准备阶段、活跃运行及排队的父 agent 后续轮次。传入 `wait_for_subagents=False` 可在根 agent 首次空闲时返回。未声明此能力的旧运行时保留首次空闲返回行为。活动结束不能替代 `close()` 负责的资源清理。
+
+可信宿主先调用 `client.session_export(session_id, turn=1, max_bytes=67108864, ended_at=...)`，再调用另一运行时的 `client.session_fork(new_session_id, snapshot, max_bytes=67108864)`。源历史不变，附件通过存储能力复制，目标是持久的种子会话。宿主须在调用前授权源和目标。
+
+## 运行中会话的引导
+
+`client.session_steer(session_id, blocks, request_id=...)` 返回运行会话中已准入消息的收件箱 id。`session_prompt` 和高层 `run` 接受可选 `request_id`，用于关联排队输入。中途引导需要匹配的运行时版本。
+
 ## 自定义插件
 
 持久自定义属于 `dsh` profile。使用运行时 wheel 包提供的 `dsh` 命令初始化随附的 SDK profile，并安装外部 bundle：
@@ -81,7 +98,7 @@ with DeepSeekHarness(
 
 ## 结果与通知
 
-`Session.run()` 的活动区间从提示词被持久 inbox 接收时开始，到整个 agent 下一次进入空闲状态时结束，并返回 `RunResult(session_id, final_response, finish_reason, events, notifications)`。`final_response` 是该区间内根会话最后提交的助手文本。`finish_reason` 是最后一个根会话 `turn/end` 的 `kind`，例如 `completed`、`max-tokens` 或 `error`；没有轮次结束时为 `None`。缺少字符串 `data.reason.kind` 的 `turn/end` 违反协议，并会抛出 `SdkProtocolError`。
+`Session.run()` 的活动区间从提示词被持久 inbox 接收时开始，到协商确定的活动边界结束，并返回 `RunResult(session_id, final_response, finish_reason, events, notifications)`。`final_response` 是该区间内根会话最后提交的 assistant 文本。`finish_reason` 是最后一个根会话 `turn/end` 的 `kind`，例如 `completed`、`max-tokens` 或 `error`；没有轮次结束时为 `None`。缺少字符串 `data.reason.kind` 的 `turn/end` 违反协议，并会抛出 `SdkProtocolError`。
 
 `HarnessClient` 会在运行时进程的整个生命周期内保留已发现的 subagent 谱系。在 `Session.run()` 期间，`RunResult.notifications` 与 `on_notification` 按协议顺序接收根会话和已知后代的通知。`RunResult.events` 只包含根会话事件，因此后代输出不会替换根响应。底层 `session_prompt()` 会立即返回已排队消息的 id；绕过 `Session.run()` 的调用方自行负责后续活动边界。
 

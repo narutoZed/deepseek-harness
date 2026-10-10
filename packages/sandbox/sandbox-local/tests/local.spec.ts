@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LAUNCHER_FAILURE_EXIT } from '@deepseek-ai/node-addon-system/landlock-run'
-import { SANDBOX_UNAVAILABLE, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
+import { SANDBOX_UNAVAILABLE, SandboxUnavailableError, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import {
   LocalSandboxProvider,
@@ -73,6 +73,24 @@ function fakeSeatbeltExec(status: number): string {
 const SEATBELT_RO_PROFILE = '(version 1) (allow default) (deny file-write*) (allow file-write* (literal "/dev/null"))'
 
 describe('profile dialects', () => {
+  it('adds a cache to every supported dialect without widening read-only', () => {
+    const policy = { ...WW, additionalWritableRoots: ['/cache/uv'] }
+    expect(bwrapProfileArgs(policy)).toContain('/cache/uv')
+    expect(landlockProfileArgs(policy)).toContain('/cache/uv')
+    expect(seatbeltProfileArgs(policy).join(' ')).toContain('/cache/uv')
+    expect(bwrapProfileArgs({ ...policy, mode: 'read-only' })).not.toContain('/cache/uv')
+    expect(landlockProfileArgs({ ...policy, mode: 'read-only' })).not.toContain('/cache/uv')
+  })
+
+  it('rejects directory grants on a partial Landlock backend before executing a command', async () => {
+    const { ctx, sandbox } = await setup({}, { platform: 'linux', probeBwrap: () => false, probeLandlock: () => 'partial' })
+    try {
+      await expect(sandbox.confine(['true'], { ...WW, additionalWritableRoots: ['/cache/uv'] })).rejects.toThrow('fully enforcing backend')
+      expect((await sandbox.confine(['true'], WW)).enforcement).toBe('partial')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
   it('bwrap read-only: whole tree read-only with fresh /dev and private PID-scoped /proc, no writable mounts', () => {
     expect(bwrapProfileArgs(RO)).toEqual(['--ro-bind', '/', '/', '--dev', '/dev', '--unshare-pid', '--proc', '/proc', '--die-with-parent'])
   })
@@ -80,7 +98,7 @@ describe('profile dialects', () => {
   it('bwrap workspace-write: adds an ephemeral /tmp and rebinds the workspace root', () => {
     expect(bwrapProfileArgs(WW)).toEqual([
       '--ro-bind', '/', '/', '--dev', '/dev', '--unshare-pid', '--proc', '/proc', '--die-with-parent',
-      '--tmpfs', '/tmp', '--bind', '/ws', '/ws',
+      '--tmpfs', '/tmp', ...writableRoots(WW).filter(root => root !== '/tmp').flatMap(root => ['--bind', root, root]),
     ])
   })
 
@@ -91,7 +109,7 @@ describe('profile dialects', () => {
   })
 
   it('landlock workspace-write: adds the host /tmp and the workspace root', () => {
-    expect(landlockProfileArgs(WW)).toEqual(['--ro', '/', '--rw', '/dev/null', '--rw', '/tmp', '--rw', '/ws'])
+    expect(landlockProfileArgs(WW)).toEqual(['--ro', '/', '--rw', '/dev/null', ...writableRoots(WW).flatMap(root => ['--rw', root])])
   })
 
   it('seatbelt read-only: allow-default with every file write denied except the /dev/null literal', () => {

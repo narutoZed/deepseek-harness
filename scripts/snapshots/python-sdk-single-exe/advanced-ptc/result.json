@@ -134,7 +134,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"{{cwd}}\".\n\nCurrent DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.\n\nApproval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`)."
+            "text": "权限：\n\nCurrent working directory: \"{{cwd}}\".\n\nCurrent file policy: danger-full-access. The file sandbox does not restrict file modifications by available operations.\n\nApproval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`)."
           }
         ],
         "source": {
@@ -147,7 +147,7 @@
             },
             {
               "name": "sandbox:policy",
-              "text": "Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations."
+              "text": "Current file policy: danger-full-access. The file sandbox does not restrict file modifications by available operations."
             },
             {
               "name": "approval:policy",
@@ -1168,7 +1168,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"{{cwd}}\".\n\nCurrent DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.\n\nApproval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`)."
+                "text": "权限：\n\nCurrent working directory: \"{{cwd}}\".\n\nCurrent file policy: danger-full-access. The file sandbox does not restrict file modifications by available operations.\n\nApproval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`)."
               }
             ],
             "source": {
@@ -1181,7 +1181,7 @@
                 },
                 {
                   "name": "sandbox:policy",
-                  "text": "Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations."
+                  "text": "Current file policy: danger-full-access. The file sandbox does not restrict file modifications by available operations."
                 },
                 {
                   "name": "approval:policy",
@@ -1273,6 +1273,19 @@
       }
     },
     {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "start",
+          "attemptId": "{{parent}}:1",
+          "revision": 1,
+          "turn": 1,
+          "step": 1
+        }
+      }
+    },
+    {
       "method": "session.event",
       "payload": {
         "sessionId": "{{parent}}",
@@ -1287,6 +1300,30 @@
             ],
             "source": {
               "kind": "fallback"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:1",
+          "revision": 2,
+          "index": 0,
+          "time": 0,
+          "chunk": {
+            "type": "finish",
+            "reason": {
+              "kind": "error",
+              "failure": {
+                "code": "IMAGE_OFFLOAD_REQUIRED",
+                "message": "authored image budget failure",
+                "offloadImages": 1
+              }
             }
           }
         }
@@ -1320,6 +1357,23 @@
                 }
               }
             ]
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "end",
+          "attemptId": "{{parent}}:1",
+          "revision": 3,
+          "index": 1,
+          "outcome": {
+            "kind": "committed",
+            "eventType": "assistant/attempt",
+            "seq": 17
           }
         }
       }
@@ -1375,6 +1429,19 @@
       }
     },
     {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "start",
+          "attemptId": "{{parent}}:2",
+          "revision": 4,
+          "turn": 1,
+          "step": 1
+        }
+      }
+    },
+    {
       "method": "session.event",
       "payload": {
         "sessionId": "{{parent}}",
@@ -1386,6 +1453,138 @@
             "sessionId": "{{parent}}",
             "sessionFormatVersion": 4,
             "throughSeq": 19
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:2",
+          "revision": 5,
+          "index": 0,
+          "time": 0,
+          "chunk": {
+            "type": "block-start",
+            "index": 0,
+            "blockType": "tool-call"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:2",
+          "revision": 6,
+          "index": 1,
+          "time": 0,
+          "chunk": {
+            "type": "tool-call-delta",
+            "index": 0,
+            "id": "advanced-code",
+            "name": "run_code",
+            "argumentsDelta": ""
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:2",
+          "revision": 7,
+          "index": 2,
+          "time": 0,
+          "chunk": {
+            "type": "tool-call-delta",
+            "index": 0,
+            "id": "advanced-code",
+            "argumentsDelta": "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Call the configured Plugin tool\"}"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:2",
+          "revision": 8,
+          "index": 3,
+          "time": 0,
+          "chunk": {
+            "type": "block-end",
+            "index": 0,
+            "block": {
+              "type": "tool-call",
+              "id": "advanced-code",
+              "name": "run_code",
+              "arguments": "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Call the configured Plugin tool\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:2",
+          "revision": 9,
+          "index": 4,
+          "time": 0,
+          "chunk": {
+            "type": "usage",
+            "usage": {
+              "inputTokens": 3,
+              "outputTokens": 3,
+              "totalTokens": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:2",
+          "revision": 10,
+          "index": 5,
+          "time": 0,
+          "chunk": {
+            "type": "finish",
+            "reason": {
+              "kind": "tool-calls"
+            },
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
           }
         }
       }
@@ -1521,6 +1720,23 @@
       }
     },
     {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "end",
+          "attemptId": "{{parent}}:2",
+          "revision": 11,
+          "index": 6,
+          "outcome": {
+            "kind": "committed",
+            "eventType": "assistant/message",
+            "seq": 21
+          }
+        }
+      }
+    },
+    {
       "method": "session.event",
       "payload": {
         "sessionId": "{{parent}}",
@@ -1651,6 +1867,19 @@
       }
     },
     {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "start",
+          "attemptId": "{{parent}}:3",
+          "revision": 12,
+          "turn": 1,
+          "step": 2
+        }
+      }
+    },
+    {
       "method": "session.event",
       "payload": {
         "sessionId": "{{parent}}",
@@ -1662,6 +1891,138 @@
             "sessionId": "{{parent}}",
             "sessionFormatVersion": 4,
             "throughSeq": 27
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:3",
+          "revision": 13,
+          "index": 0,
+          "time": 0,
+          "chunk": {
+            "type": "block-start",
+            "index": 0,
+            "blockType": "tool-call"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:3",
+          "revision": 14,
+          "index": 1,
+          "time": 0,
+          "chunk": {
+            "type": "tool-call-delta",
+            "index": 0,
+            "id": "advanced-denied-ptc",
+            "name": "run_code",
+            "argumentsDelta": ""
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:3",
+          "revision": 15,
+          "index": 2,
+          "time": 0,
+          "chunk": {
+            "type": "tool-call-delta",
+            "index": 0,
+            "id": "advanced-denied-ptc",
+            "argumentsDelta": "{\"code\": \"try { await tools.snapshot_double({ value: -1 }) } catch (error) { return error.message }\", \"description\": \"Catch a structured inner tool denial\"}"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:3",
+          "revision": 16,
+          "index": 3,
+          "time": 0,
+          "chunk": {
+            "type": "block-end",
+            "index": 0,
+            "block": {
+              "type": "tool-call",
+              "id": "advanced-denied-ptc",
+              "name": "run_code",
+              "arguments": "{\"code\": \"try { await tools.snapshot_double({ value: -1 }) } catch (error) { return error.message }\", \"description\": \"Catch a structured inner tool denial\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:3",
+          "revision": 17,
+          "index": 4,
+          "time": 0,
+          "chunk": {
+            "type": "usage",
+            "usage": {
+              "inputTokens": 3,
+              "outputTokens": 3,
+              "totalTokens": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:3",
+          "revision": 18,
+          "index": 5,
+          "time": 0,
+          "chunk": {
+            "type": "finish",
+            "reason": {
+              "kind": "tool-calls"
+            },
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
           }
         }
       }
@@ -1793,6 +2154,23 @@
             ]
           },
           "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "end",
+          "attemptId": "{{parent}}:3",
+          "revision": 19,
+          "index": 6,
+          "outcome": {
+            "kind": "committed",
+            "eventType": "assistant/message",
+            "seq": 29
+          }
         }
       }
     },
@@ -1932,6 +2310,19 @@
       }
     },
     {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "start",
+          "attemptId": "{{parent}}:4",
+          "revision": 20,
+          "turn": 1,
+          "step": 3
+        }
+      }
+    },
+    {
       "method": "session.event",
       "payload": {
         "sessionId": "{{parent}}",
@@ -1943,6 +2334,115 @@
             "sessionId": "{{parent}}",
             "sessionFormatVersion": 4,
             "throughSeq": 35
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:4",
+          "revision": 21,
+          "index": 0,
+          "time": 0,
+          "chunk": {
+            "type": "block-start",
+            "index": 0,
+            "blockType": "text"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:4",
+          "revision": 22,
+          "index": 1,
+          "time": 0,
+          "chunk": {
+            "type": "text-delta",
+            "index": 0,
+            "text": "ADVANCED_EXECUTABLE_OK"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:4",
+          "revision": 23,
+          "index": 2,
+          "time": 0,
+          "chunk": {
+            "type": "block-end",
+            "index": 0,
+            "block": {
+              "type": "text",
+              "text": "ADVANCED_EXECUTABLE_OK"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:4",
+          "revision": 24,
+          "index": 3,
+          "time": 0,
+          "chunk": {
+            "type": "usage",
+            "usage": {
+              "inputTokens": 3,
+              "outputTokens": 3,
+              "totalTokens": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "chunk",
+          "attemptId": "{{parent}}:4",
+          "revision": 25,
+          "index": 4,
+          "time": 0,
+          "chunk": {
+            "type": "finish",
+            "reason": {
+              "kind": "stop"
+            },
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "text"
+                }
+              ]
+            }
           }
         }
       }
@@ -2058,6 +2558,23 @@
             ]
           },
           "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.assistant_stream",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "frame": {
+          "type": "end",
+          "attemptId": "{{parent}}:4",
+          "revision": 26,
+          "index": 5,
+          "outcome": {
+            "kind": "committed",
+            "eventType": "assistant/message",
+            "seq": 37
+          }
         }
       }
     },
@@ -2220,6 +2737,12 @@
       "payload": {
         "sessionId": "{{parent}}",
         "status": "idle"
+      }
+    },
+    {
+      "method": "session.settled",
+      "payload": {
+        "sessionId": "{{parent}}"
       }
     }
   ]

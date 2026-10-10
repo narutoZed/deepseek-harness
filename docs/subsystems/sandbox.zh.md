@@ -42,6 +42,8 @@ type SandboxEnforcement = 'full' | 'partial'
 
 完整执行策略会按每次能力调用解析并携带。它包括 `danger-full-access`，因此消费方可以只解析一次策略，再决定是否绕过约束。普通工具调用从调用会话的不可变 cwd 派生 `workspaceRoot`；部署配置是没有 agent（智能体）时的回退值。解析器保留执行环境中的绝对路径写法。执行限制的提供方在文件实际存在的位置规范化根目录，因此包含 `symlink/..` 的 cwd 会标识配套子进程提供方实际运行的目录。
 
+部署管理的额外可写根目录随解析后的策略传递。共享根目录解析器仅在 `workspace-write` 下授权写入；策略服务负责注册与撤销。
+
 ```ts type-equiv
 /**
  * The complete file-effect policy resolved for one capability call. The root
@@ -53,6 +55,8 @@ interface SandboxExecutionPolicy {
   mode: SandboxMode
   /** Absolute root directory `workspace-write` may write under. */
   workspaceRoot: string
+  /** Additional absolute directories authorized by the deployment under workspace-write. */
+  additionalWritableRoots?: readonly string[]
   /**
    * Opaque identity of the calling session (the branded `dsh-session`
    * SessionId). Backends key per-session state off it (e.g. windows-acl gives
@@ -206,6 +210,15 @@ The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default mo
  * @returns the fully resolved per-call mode and absolute workspace root.
  */
 resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy
+
+/**
+ * Authorize deployment-owned directories without changing the session's mode.
+ * Register through the contributing plugin's effect so disposal revokes its grant.
+ * Callers must keep these roots and their ancestors outside model-controlled renames.
+ * @param roots - existing absolute directory paths from trusted plugin configuration.
+ * @returns disposer revoking this registration; throws for missing directories or filesystem roots.
+ */
+registerWritableRoots(roots: readonly string[]): () => void
 
 /**
  * Read the session override without applying the deployment default.
