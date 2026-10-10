@@ -194,6 +194,85 @@ describe('syncTools', () => {
     expect(ctx.tools.get('add')).toBeUndefined()
   })
 
+  it.each([
+    { filter: {}, expected: ['file_read', 'list_files', 'list_delete', 'file_write'] },
+    { filter: { allowTools: [] }, expected: [] },
+    { filter: { denyTools: [] }, expected: ['file_read', 'list_files', 'list_delete', 'file_write'] },
+    { filter: { denyTools: ['file_*'] }, expected: ['list_files', 'list_delete'] },
+    { filter: { allowTools: ['file_read', 'list_*'], denyTools: ['list_delete', 'file_write', 'file_rm*'] }, expected: ['file_read', 'list_files'] },
+    { filter: { allowTools: ['*'], denyTools: ['*'] }, expected: [] },
+    { filter: { allowTools: ['missing'] }, expected: [] },
+    { filter: { allowTools: ['FILE_READ'] }, expected: [] },
+    { filter: { allowTools: ['*ile_*ad'] }, expected: ['file_read'] },
+    { filter: { allowTools: ['mcp__srv__file_read'] }, expected: [] },
+  ])('filters discovered raw names with $filter', async ({ filter, expected }) => {
+    const client = createMockClient(['file_read', 'list_files', 'list_delete', 'file_write']
+      .map(name => ({ name, inputSchema: { type: 'object' } })))
+    try {
+      await syncTools(client as never, ctx, { ...defaultOpts, ...filter }, new Map())
+      expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(expected.map(name => publicToolName('srv', name)))
+      for (const name of ['file_read', 'list_files', 'list_delete', 'file_write']) {
+        const result = await ctx.tools.execute({
+          signal: testToolSignal, callId: ToolCallId(`filter-${name}`),
+          name: publicToolName('srv', name), arguments: {},
+        })
+        expect(result.isError).toBe(!expected.includes(name))
+      }
+      expect(client.callTool.mock.calls.map(([params]) => params?.name)).toEqual(expected)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('matches literal punctuation and the entire raw name before public-name normalization', async () => {
+    const names = ['admin.reset', 'adminXreset', 'admin.reset\n', 'file[1]?+$', 'file1', 'list_', 'list_files']
+    const client = createMockClient(names.map(name => ({ name, inputSchema: { type: 'object' } })))
+    try {
+      await syncTools(client as never, ctx, {
+        ...defaultOpts, allowTools: ['admin.reset', 'file[1]?+$', 'list_*'],
+      }, new Map())
+      expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(
+        ['admin.reset', 'file[1]?+$', 'list_', 'list_files'].map(name => publicToolName('srv', name)),
+      )
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('reapplies filters on sync, removes old tools, and leaves another server untouched', async () => {
+    const client = createMockClient([{ name: 'read_old', inputSchema: { type: 'object' } }])
+    const options = { ...defaultOpts, allowTools: ['read_*'], denyTools: ['read_secret'] }
+    try {
+      const first = await syncTools(client as never, ctx, options, new Map())
+      await syncTools(client as never, ctx, { ...defaultOpts, serverName: 'other' }, new Map())
+      client.listTools.mockResolvedValue({
+        tools: ['read_new', 'read_secret', 'write'].map(name => ({ name, inputSchema: { type: 'object' } })),
+        nextCursor: undefined,
+      })
+      const next = await syncTools(client as never, ctx, options, first)
+      expect(ctx.tools.schemas().map(tool => tool.name).sort()).toEqual(['mcp__other__read_old', 'mcp__srv__read_new'])
+      for (const dispose of next.values()) dispose()
+      expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['mcp__other__read_old'])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('still rejects duplicate names when those tools are excluded', async () => {
+    const client = createMockClient([{ name: 'stable', inputSchema: { type: 'object' } }])
+    try {
+      const previous = await syncTools(client as never, ctx, defaultOpts, new Map())
+      client.listTools.mockResolvedValue({
+        tools: ['dup', 'dup'].map(name => ({ name, inputSchema: { type: 'object' } })), nextCursor: undefined,
+      })
+      await expect(syncTools(client as never, ctx, { ...defaultOpts, denyTools: ['dup'] }, previous))
+        .rejects.toThrow(/listed tool "dup" more than once/)
+      expect(ctx.tools.get('mcp__srv__stable')).toBeDefined()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('lets two servers publish the same raw name side by side', async () => {
     const clientA = createMockClient([{ name: 'search', inputSchema: { type: 'object' } }])
     const clientB = createMockClient([{ name: 'search', inputSchema: { type: 'object' } }])

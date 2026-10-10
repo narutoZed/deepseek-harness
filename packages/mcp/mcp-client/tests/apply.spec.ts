@@ -119,6 +119,18 @@ describe('mcp-client plugin module exports', () => {
     expect(resolved.serverName).toBe('github-prod_1')
   })
 
+  it.each([
+    { transport: 'stdio' as const, command: 'node' },
+    { transport: 'streamable-http' as const, url: 'http://localhost/mcp' },
+  ])('validates tool filters for $transport and preserves an empty allowlist', (transport) => {
+    const input = { ...transport, serverName: 'filtered' }
+    expect(ConfigSchema(input)).toMatchObject({ allowTools: ['*'], denyTools: [] })
+    expect(ConfigSchema({ ...input, allowTools: [], denyTools: ['write*'] }))
+      .toMatchObject({ allowTools: [], denyTools: ['write*'] })
+    expect(() => ConfigSchema({ ...input, allowTools: 'read' } as never)).toThrow()
+    expect(() => ConfigSchema({ ...input, denyTools: [42] } as never)).toThrow()
+  })
+
   it('Config schema materializes reconnect defaults and merges partial overrides', () => {
     const omitted = ConfigSchema({
       transport: 'stdio',

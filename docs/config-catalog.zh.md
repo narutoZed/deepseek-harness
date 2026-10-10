@@ -2157,7 +2157,7 @@ export interface LspLocalServerConfig {
 ## `@deepseek-ai/dsh-mcp-client`
 
 - `inject`: `tools`
-- `source`: [`packages/mcp/mcp-client/src/index.ts:104`](../packages/mcp/mcp-client/src/index.ts)
+- `source`: [`packages/mcp/mcp-client/src/index.ts:112`](../packages/mcp/mcp-client/src/index.ts)
 
 ```ts config-catalog
 /** Configuration for one stdio or Streamable HTTP MCP server. */
@@ -2181,6 +2181,10 @@ export interface StdioConfig {
   env: Record<string, string>
   /** Working directory for the child process. */
   cwd: string
+  /** Case-sensitive raw tool-name patterns to expose; `*` matches any text. Omission allows all, `[]` none. */
+  allowTools?: string[]
+  /** Raw tool-name patterns to exclude after allowTools; exclusions take precedence. */
+  denyTools?: string[]
   /** Timeout per tool call or resource request in milliseconds. */
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
@@ -2205,6 +2209,10 @@ export interface StreamableHttpConfig {
   url: string
   /** Additional headers attached to MCP requests. */
   headers: Record<string, string>
+  /** Case-sensitive raw tool-name patterns to expose; `*` matches any text. Omission allows all, `[]` none. */
+  allowTools?: string[]
+  /** Raw tool-name patterns to exclude after allowTools; exclusions take precedence. */
+  denyTools?: string[]
   /** Timeout per tool call or resource request in milliseconds. */
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */

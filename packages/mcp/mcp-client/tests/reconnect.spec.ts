@@ -134,6 +134,35 @@ describe('reconnect supervisor', () => {
     ctx = await mountRegistry()
   })
 
+  it('keeps allow/deny filters across initial discovery, list changes, and reconnect', async () => {
+    mockListTools.mockResolvedValue(listing('read_first', 'read_secret', 'write'))
+    const config = {
+      ...stdioConfig({ initialDelayMs: 2, maxDelayMs: 8, maxAttempts: 2 }),
+      allowTools: ['read_*'], denyTools: ['read_secret'],
+    }
+    const handle = startConnection(ctx, config, resolveReconnectPolicy(config.reconnect, 'reconnect'))
+    try {
+      await handle.ready
+      expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['mcp__srv__read_first'])
+      mockListTools.mockResolvedValue(listing('read_second', 'read_secret', 'write'))
+      const changed = mockSetNotificationHandler.mock.calls[0]?.[1] as () => void
+      changed()
+      await vi.waitFor(() => {
+        expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['mcp__srv__read_second'])
+      })
+      mockListTools.mockResolvedValue(listing('read_third', 'read_secret', 'write'))
+      instances[0]!.onclose?.()
+      await vi.waitFor(() => {
+        expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['mcp__srv__read_third'])
+      })
+      await handle.dispose()
+      expect(ctx.tools.schemas()).toEqual([])
+    } finally {
+      await handle.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('keeps instructions withdrawn when disposal interrupts initial discovery', async () => {
     const listingGate: PromiseWithResolvers<ReturnType<typeof listing>> = Promise.withResolvers()
     const instructionSpy = vi.spyOn(MockClient.prototype, 'getInstructions').mockReturnValue('Instructions after discovery.')

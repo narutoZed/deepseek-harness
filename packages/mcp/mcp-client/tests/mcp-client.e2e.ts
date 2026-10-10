@@ -549,6 +549,32 @@ describe('streamable-http — in-process MCP server', () => {
     expect(seenMessageHeaders).toContain('quiet')
   })
 
+  it('filters HTTP tools without changing another connection to the same server', async () => {
+    const filtered = await mountRegistry()
+    try {
+      await apply(filtered, {
+        transport: 'streamable-http', serverName: 'filtered', url: baseUrl,
+        headers: { Authorization: 'Bearer e2e-test-token' }, toolCallTimeoutMs: 15_000,
+        failOnStartupError: true, allowTools: ['p*', 'shout'], denyTools: ['shout'],
+      })
+      expect(filtered.tools.schemas().map(tool => tool.name)).toEqual(['mcp__filtered__ping'])
+      expect(ctx.tools.get('mcp__web__shout')).toBeDefined()
+      const before = seenAuth.length
+      const denied = await filtered.tools.execute({
+        signal: testToolSignal, callId: nextCallId(), name: 'mcp__filtered__shout', arguments: { message: 'blocked' },
+      })
+      expect(denied.isError).toBe(true)
+      expect(seenAuth).toHaveLength(before)
+      const allowed = await filtered.tools.execute({
+        signal: testToolSignal, callId: nextCallId(), name: 'mcp__filtered__ping', arguments: {},
+      })
+      expect(allowed.isError).toBe(false)
+      expect(allowed.content).toEqual([{ type: 'text', text: 'pong' }])
+    } finally {
+      await filtered.fiber.dispose()
+    }
+  })
+
   it('sends configured headers on every HTTP request', () => {
     expect(seenAuth.length).toBeGreaterThan(0)
     for (const auth of seenAuth) expect(auth).toBe('Bearer e2e-test-token')
