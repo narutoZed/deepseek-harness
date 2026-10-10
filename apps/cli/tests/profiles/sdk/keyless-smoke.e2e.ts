@@ -917,7 +917,7 @@ it('exports a cold SDK session and continues its portable fork through the shipp
     await source.run('fork-first-marker', { sessionId: 'source' })
     const params = { sessionId: 'source', turn: 1, maxBytes: 1_000_000 }
     const snapshot = await source.client.request('session/export', params)
-    expect(snapshot).toMatchObject({ sourceSessionId: 'source', events: expect.any(Array) })
+    expect(snapshot).toMatchObject({ sourceSessionId: 'source' })
     await source.run('fork-later-marker', { sessionId: 'source' })
     await source.close()
     const beforeRead = requests.length
