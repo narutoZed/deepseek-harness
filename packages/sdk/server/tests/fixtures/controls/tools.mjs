@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 export const name = 'sdk-control-fixture'
-export const inject = ['tools', 'approval']
+export const inject = ['tools', 'approval', 'workingDirectory']
 export function apply(ctx, config) {
   const output = { schema: { type: 'string' }, render: (_args, text) => [{ type: 'text', text }] }
   ctx.tools.register({
@@ -14,7 +14,7 @@ export function apply(ctx, config) {
       const outcome = await ctx.approval.request({ agent: exec.agent, toolName: 'control_protected',
         callId: exec.callId, reason: 'Write the isolated test marker once', signal: exec.signal })
       if (outcome !== 'allowed-once') return `DENIED:${outcome}`
-      const path = join(process.cwd(), 'controlled-actions.json')
+      const path = join(ctx.workingDirectory.get(exec.agent.session), 'controlled-actions.json')
       let count = 0
       try { count = JSON.parse(await readFile(path, 'utf8')).count } catch (error) { if (error.code !== 'ENOENT') throw error }
       await writeFile(path, JSON.stringify({ count: count + 1 }))
