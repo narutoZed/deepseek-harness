@@ -31,6 +31,10 @@ export interface ToolBridgeOptions {
   serverName: string
   toolCallTimeoutMs: number
   requestMeta?: Record<string, unknown>
+  /** Case-sensitive raw-name patterns; only `*` is a wildcard. Omission allows all. */
+  allowTools?: readonly string[]
+  /** Raw-name exclusions, applied after allowTools. */
+  denyTools?: readonly string[]
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -87,6 +91,12 @@ export function publicToolName(serverName: string, rawName: string): string {
   return `${normalized.slice(0, MAX_PUBLIC_NAME_LENGTH - HASH_LENGTH - 1)}_${hash}`
 }
 
+/** Compile a whole-name pattern, treating every character except `*` literally. */
+function toolNamePattern(pattern: string): RegExp {
+  const escaped = pattern.split('*').map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')
+  return new RegExp(`^${escaped}(?!.)`, 's')
+}
+
 /**
  * Sync the MCP server's tool list into the harness ToolRuntime.
  *
@@ -105,7 +115,7 @@ export function publicToolName(serverName: string, rawName: string): string {
  *
  * @param client - Connected MCP Client instance used to list and call tools.
  * @param ctx - Cordis context providing the `tools` service for registration.
- * @param opts - Bridge options: server namespace and per-call timeout.
+ * @param opts - Server namespace, raw-name filters, and per-call timeout.
  * @param previous - Disposer map from the prior sync generation; disposed
  *   during the swap phase (only after the fetch phase succeeded).
  * @returns A map of registered public tool names to their unregister
@@ -119,16 +129,22 @@ export async function syncTools(
 ): Promise<ToolDisposers> {
   // Phase 1: fetch and build the next generation without touching the registry.
   const definitions = new Map<string, ToolDefinition>()
+  const names = new Set<string>()
+  const allow = opts.allowTools?.map(toolNamePattern)
+  const deny = opts.denyTools?.map(toolNamePattern)
   const response = client.getServerCapabilities()?.tools === undefined
     ? { tools: [] }
     : await client.listTools(undefined, { cacheMode: 'refresh' })
   for (const tool of response.tools) {
     const publicName = publicToolName(opts.serverName, tool.name)
-    if (definitions.has(publicName)) {
+    if (names.has(publicName)) {
       throw new Error(
         `mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`,
       )
     }
+    names.add(publicName)
+    if ((allow !== undefined && !allow.some(pattern => pattern.test(tool.name)))
+      || deny?.some(pattern => pattern.test(tool.name))) continue
     definitions.set(publicName, createMcpToolDefinition(ctx, {
       name: publicName,
       rawName: tool.name,

@@ -18,8 +18,11 @@
   en: 524a88da619f1478
   zh: dc75805820b6c592
 /deepseek-ai-dsh-mcp-client/use-this-package/minimal-configuration:
-  en: 4d8b58f6a5e0c3f1
-  zh: 28e1c06aeef33131
+  en: caac96030532dd0d
+  zh: 6bf4f0d35f199249
+/deepseek-ai-dsh-mcp-client/use-this-package/tool-filtering:
+  en: f1e51ed894cf6d3c
+  zh: 9a9a02d7221a1ebb
 /deepseek-ai-dsh-mcp-client/use-this-package/tool-naming-and-coexistence:
   en: 75ae9745d5b04796
   zh: 8ae5b8ca6e73296e
@@ -57,8 +60,8 @@
   en: 9f6397197d9a607d
   zh: 79cf93aaf2e25a39
 /deepseek-ai-dsh-mcp-client/model-experience/discovered-mcp-tools/what-the-model-sees:
-  en: 866a129e71634e0e
-  zh: b27e4b22a07c2f26
+  en: f754cc4294f42153
+  zh: ee316347db5a6975
 /deepseek-ai-dsh-mcp-client/model-experience/discovered-mcp-tools/token-effect:
   en: ac85a6a5130c6440
   zh: 9a31229f5355432b

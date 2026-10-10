@@ -23,6 +23,8 @@
         serverName: catalog
         command: !!js process.execPath
         args: !!js '[process.env.DSH_MCP_RESOURCES_FIXTURE]'
+        allowTools: ["file_read", "list_*"]
+        denyTools: ["list_delete"]
         failOnStartupError: true
         reconnect:
           enabled: false

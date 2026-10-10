@@ -60,6 +60,7 @@ kind: "package-reference"
 | `serverName` | 必填 | 服务器工具名称的 namespace；`[A-Za-z0-9_-]{1,32}`，在一个注册作用域内唯一 |
 | `command` / `args` / `env` / `cwd` | — | stdio：可执行文件、参数、合并到清洗过的环境之上的额外环境变量、工作目录 |
 | `url` / `headers` | — | streamable-http：端点 URL 与额外请求标头 |
+| `allowTools` / `denyTools` | `["*"]` / `[]` | 按原始工具名匹配的允许／排除规则；黑名单优先 |
 | `toolCallTimeoutMs` | `60,000` | 每次 `tools/call` 或资源请求的超时 |
 | `maxInstructionBytes` | `32,768` | 包括服务器归属信息在内的服务器指令 UTF-8 字节上限；超出时连接失败 |
 | `failOnStartupError` | `false` | 初始连接或工具同步失败时拒绝插件激活 |
@@ -71,6 +72,22 @@ kind: "package-reference"
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-mcp-client)是每个受支持字段的穷尽式真源。
 
 启动后，服务器的工具会以 `mcp__<serverName>__<tool>` 形式出现——试着用一条提示词调用其中一个。如果初始连接失败，harness 仍会启动，但该服务器的工具不会出现，并会记录一条错误。设置 `failOnStartupError: true` 会拒绝插件激活；[app-boot 的启动策略](../../boot/app-boot/README.zh.md)仍允许可选 MCP 配置项失败，而不中止 harness。
+
+### 工具过滤
+
+两种传输都可在服务器配置项的 `config` 下直接设置 `allowTools` 和 `denyTools`。规则区分大小写，匹配完整的 MCP 原始工具名，在添加 `mcp__<serverName>__` 前缀或规范化之前生效。只有 `*` 是特殊字符，匹配零个或多个字符；其他字符均按字面值匹配。
+
+```yaml
+config:
+  serverName: my-mcp
+  transport: stdio
+  command: node
+  args: ["./mcp-server.js"]
+  allowTools: ["file_read", "list_*"]
+  denyTools: ["list_delete", "file_write", "file_rm*"]
+```
+
+省略 `allowTools` 时允许全部工具；`allowTools: []` 不允许任何工具。省略 `denyTools` 或设为 `[]` 时不额外排除工具。黑名单匹配始终优先。允许暂时没有匹配工具的规则，服务器新增工具时仍应用相同规则。过滤在首次发现、工具列表更新与重连时执行；被排除的工具没有已注册的 schema 或可调用入口。规则只影响本服务器的工具，不影响其指令与资源、其他服务器或原生工具。
 
 ### 工具命名与共存
 
@@ -162,7 +179,7 @@ SDK 通过旧版通知或现代协议订阅接收工具列表变化。监督器�
 
 #### 模型看到什么
 
-发现成功后，SDK 接受的 MCP 工具以原生工具名称 `mcp__<serverName>__<rawName>`（或其确定性规范化形式）出现，携带服务器描述和输入 schema。重新同步会替换注册代；释放或重连预算耗尽会移除工具。未声明 tools 能力的服务器以空工具集连接。
+发现成功后，SDK 接受且通过配置过滤的 MCP 工具以原生工具名称 `mcp__<serverName>__<rawName>`（或其确定性规范化形式）出现，携带服务器描述和输入 schema。重新同步会替换注册代；释放或重连预算耗尽会移除工具。未声明 tools 能力的服务器以空工具集连接。
 
 #### Token 影响
 

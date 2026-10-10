@@ -8,6 +8,11 @@ serveStdio(() => {
     { name: 'snapshot-resources', version: '1.0.0' },
     { instructions: 'MCP_RESOURCE_INSTRUCTION: keep {{braces}} literal. Read resources from the catalog server.' },
   )
+  for (const name of ['file_write', 'list_delete']) {
+    server.registerTool(name, { description: 'Must be excluded by the snapshot tool filters.' }, async () => ({
+      content: [{ type: 'text', text: 'UNEXPECTED_FILTERED_TOOL_CALL' }],
+    }))
+  }
   server.registerResource('memo', 'memo://text', {
     description: 'Deterministic text memo.', mimeType: 'text/plain',
   }, async uri => ({

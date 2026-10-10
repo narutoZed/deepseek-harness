@@ -66,6 +66,10 @@ export interface StdioConfig {
   env: Record<string, string>
   /** Working directory for the child process. */
   cwd: string
+  /** Case-sensitive raw tool-name patterns to expose; `*` matches any text. Omission allows all, `[]` none. */
+  allowTools?: string[]
+  /** Raw tool-name patterns to exclude after allowTools; exclusions take precedence. */
+  denyTools?: string[]
   /** Timeout per tool call or resource request in milliseconds. */
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
@@ -92,6 +96,10 @@ export interface StreamableHttpConfig {
   url: string
   /** Additional headers attached to MCP requests. */
   headers: Record<string, string>
+  /** Case-sensitive raw tool-name patterns to expose; `*` matches any text. Omission allows all, `[]` none. */
+  allowTools?: string[]
+  /** Raw tool-name patterns to exclude after allowTools; exclusions take precedence. */
+  denyTools?: string[]
   /** Timeout per tool call or resource request in milliseconds. */
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
@@ -128,6 +136,8 @@ export const Config = z.union([
     args: z.array(String).default([]),
     env: z.dict(String).default({}),
     cwd: z.string().default(''),
+    allowTools: z.array(String).default(['*']),
+    denyTools: z.array(String).default([]),
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
@@ -139,6 +149,8 @@ export const Config = z.union([
     serverName: z.string().required().pattern(SERVER_NAME_PATTERN),
     url: z.string().required(),
     headers: z.dict(String).default({}),
+    allowTools: z.array(String).default(['*']),
+    denyTools: z.array(String).default([]),
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
