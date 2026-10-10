@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 from deepseek_harness import DeepSeekHarness, HarnessClient, HarnessConfig
-from deepseek_harness.errors import JsonRpcError, TransportClosedError
 from deepseek_harness_runtime import RUNTIME_MODE_ENV_VAR, resolve_bundled_launch_args
 
 _MODES = ("exe", "node")
@@ -69,7 +68,7 @@ def test_python_sdk_applies_an_ordered_profile_patch(
     patch = tmp_path / "persona.patch.yml"
     patch.write_text(json.dumps([{
         "id": "system-prompt",
-        "config": {"persona": "Python SDK ordered patch marker."},
+        "config": {"personaPrefix": "Python SDK ordered patch marker."},
     }]))
     harness = DeepSeekHarness(
         model="deepseek-v4-pro",
@@ -87,7 +86,7 @@ def test_python_sdk_applies_an_ordered_profile_patch(
 
 
 @pytest.mark.parametrize("mode", _MODES)
-def test_bundled_runtime_surfaces_unbundled_plugin_failure(
+def test_bundled_runtime_reports_optional_unbundled_plugin_failure(
     tmp_path: Path, mode: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     patch = tmp_path / "missing.patch.yml"
@@ -98,9 +97,10 @@ def test_bundled_runtime_surfaces_unbundled_plugin_failure(
     client = _client(tmp_path, mode, monkeypatch, patch)
     client.start()
     try:
-        with pytest.raises((JsonRpcError, TransportClosedError, TimeoutError)) as excinfo:
-            client.initialize(provider="deepseek-official", cwd=str(tmp_path), model="deepseek-v4-pro")
+        client.initialize(provider="deepseek-official", cwd=str(tmp_path), model="deepseek-v4-pro")
     finally:
         client.close()
 
-    assert "@deepseek-ai/dsh-does-not-exist" in str(excinfo.value)
+    diagnostics = client._runtime_diagnostics()
+    assert "warning: 1 entry did not activate" in diagnostics
+    assert "@deepseek-ai/dsh-does-not-exist" in diagnostics
