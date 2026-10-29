@@ -27,7 +27,7 @@ kind: "package-reference"
 
 当模型需要像调用原生工具一样调用外部 MCP 服务器时，添加 `dsh-mcp-client`。为每台服务器指定唯一名称和传输方式。官方 SDK 优先选择可用的 2026-07-28 协议，并回退到支持的旧版协议。本地程序使用 stdio，远端服务使用 Streamable HTTP；stdio 协商会先启动临时探测进程，再启动实际服务进程。
 
-可选的 `config.requestMeta` 通过 `tools/call.params._meta` 传递，与模型填写的参数分离，不改变工具 schema 或参数。宿主负责不可变的调用元数据，并在其变化时重建运行时；传输凭证应放在 URL 或请求头中，而非元数据。
+可选的 `config.requestMeta` 通过 `tools/call.params._meta` 传递，与模型填写的参数分离。它接受受信任的元数据对象，或接收当前 `ToolExecution` 的同步解析函数。解析函数在每次调用时运行，可在传输前拒绝调用；它不改变工具 schema 或参数。宿主按执行授权元数据；传输凭证应放在 URL 或请求头中，而非元数据。
 
 ### 最小配置
 

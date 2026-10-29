@@ -287,19 +287,32 @@ export class HarnessClient {
     let capabilities: InitializeResult['capabilities']
     if (result.capabilities !== undefined) {
       if (!isRecord(result.capabilities)
-        || ['sessionTreeSettled', 'approvalResponses', 'subagentControl'].some(key =>
+        || ['sessionTreeSettled', 'approvalResponses', 'subagentControl', 'sessionPrepare', 'sessionDispose'].some(key =>
           isRecord(result.capabilities) && result.capabilities[key] !== undefined && typeof result.capabilities[key] !== 'boolean')) {
         throw new SdkProtocolError('initialize returned malformed capabilities')
       }
       capabilities = { sessionTreeSettled: result.capabilities.sessionTreeSettled === true,
         ...(result.capabilities.approvalResponses === undefined
           ? {} : { approvalResponses: result.capabilities.approvalResponses === true }),
-        ...(result.capabilities.subagentControl === undefined ? {} : { subagentControl: result.capabilities.subagentControl === true }) }
+        ...(result.capabilities.subagentControl === undefined ? {} : { subagentControl: result.capabilities.subagentControl === true }),
+        ...(result.capabilities.sessionPrepare === undefined ? {} : { sessionPrepare: result.capabilities.sessionPrepare === true }),
+        ...(result.capabilities.sessionDispose === undefined ? {} : { sessionDispose: result.capabilities.sessionDispose === true }) }
     }
     return {
       serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version },
       ...capabilities === undefined ? {} : { capabilities },
     }
+  }
+
+  /**
+   * Prepare a Session with an absolute origin before sending a prompt.
+   * @param sessionId - Session identity.
+   * @param cwd - authorized absolute origin directory.
+   * @returns when Session initialization completes.
+   */
+  async prepareSession(sessionId: string, cwd: string): Promise<void> {
+    const result = await this.request('session/prepare', { sessionId, cwd })
+    if (!isRecord(result)) throw new SdkProtocolError('session/prepare returned an invalid response')
   }
 
   /**

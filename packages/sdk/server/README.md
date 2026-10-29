@@ -29,6 +29,10 @@ When the composition provides `approval`, the server advertises `approvalRespons
 <a id="use-this-package"></a>
 ## Use this package
 
+`session/dispose` cancels and releases one SDK root and its descendants without closing other roots or deleting durable history. The server advertises `sessionDispose`; a later prepare can resume the same identity.
+
+`session/prepare` accepts a Session id and an absolute origin directory, creates or resumes the Session without starting a turn, and rejects an origin mismatch. `initialize` advertises `sessionPrepare`; callers must authorize the directory.
+
 `session/working-directory/get` accepts `{ sessionId }`; `session/working-directory/set` accepts `{ sessionId, path }`. Both return `{ cwd }` and create an unknown Session without starting a model turn. Reads recover missing directories through the working-directory service; changes preserve origin metadata and permissions, and reach the model through logged user context.
 
 Mount this plugin when a runtime must serve SDK clients: add it to a `cordis.yml` that composes the agent service, boot the runtime, and clients connect over stdio. The common path is explicit — the plugin needs `agents`, `sessions`, `workingDirectory`, and `sessionProjections`; other capabilities come from the surrounding tree.

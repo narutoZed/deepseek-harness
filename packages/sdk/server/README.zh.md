@@ -29,6 +29,10 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
+`session/dispose` 取消并释放一个 SDK 根会话及其后代，不关闭其他根会话，也不删除持久历史。服务器声明 `sessionDispose`；之后可以用 prepare 恢复同一身份。
+
+`session/prepare` 接受会话 ID 和绝对初始目录，不启动轮次即可创建或恢复会话，并拒绝不匹配的初始目录。`initialize` 声明 `sessionPrepare`；调用方必须授权目录。
+
 `session/working-directory/get` 接收 `{ sessionId }`；`session/working-directory/set` 接收 `{ sessionId, path }`。两者均返回 `{ cwd }`，并可创建未知 Session，而不启动模型轮次。读取通过工作目录服务恢复缺失目录；修改保留起始目录元数据与权限，并通过已记录的用户上下文告知模型。
 
 当运行时必须服务 SDK 客户端时挂载本插件：把它加入组合了 agent 服务的 `cordis.yml`，启动运行时，客户端即可通过 stdio 连接。常用路径是显式的——插件需要 `agents`、`sessions`、`workingDirectory` 和 `sessionProjections` 服务；其他能力来自外围插件树。

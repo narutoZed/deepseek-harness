@@ -479,6 +479,20 @@ describe('tool execution', () => {
     )
   })
 
+  it('resolves metadata for each concurrent execution without mutating arguments', async () => {
+    const client = createMockClient([{ name: 'echo', inputSchema: { type: 'object' } }])
+    await syncTools(client as never, ctx, {
+      ...defaultOpts, requestMeta: execution => ({ session_id: String(execution.callId) }),
+    }, new Map())
+    await Promise.all(['a', 'b'].map(id => ctx.tools.execute({
+      signal: testToolSignal, callId: ToolCallId(id), name: 'mcp__srv__echo', arguments: { msg: id },
+    })))
+    for (const id of ['a', 'b']) expect(client.callTool).toHaveBeenCalledWith(
+      { name: 'echo', arguments: { msg: id }, _meta: { session_id: id } },
+      expect.objectContaining({ timeout: 60_000 }),
+    )
+  })
+
   it('sends the raw name for normalized public names', async () => {
     const client = createMockClient(
       [{ name: 'admin.reset', inputSchema: { type: 'object' } }],

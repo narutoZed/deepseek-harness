@@ -311,6 +311,11 @@ reader.on('line', (line) => {
         },
       })
       return
+    case 'session/prepare': {
+      workingDirectories.set(sessionIdOf(frame.params), String(frame.params?.cwd))
+      respond({})
+      return
+    }
     case 'session/working-directory/get':
     case 'session/working-directory/set': {
       if (env.FAKE_MALFORMED_DIRECTORY !== undefined) {

@@ -24,13 +24,17 @@ import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
+/** Trusted metadata resolved independently for each execution, outside model arguments. */
+export type McpRequestMeta = Record<string, unknown>
+  | ((execution: ToolExecution) => Record<string, unknown>)
+
 /** Resolved options relevant to tool bridging. */
 export interface ToolBridgeOptions {
   /** Whether a registry conflict is contained or rejects this synchronization. */
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
-  requestMeta?: Record<string, unknown>
+  requestMeta?: McpRequestMeta
   /** Case-sensitive raw-name patterns; only `*` is a wildcard. Omission allows all. */
   allowTools?: readonly string[]
   /** Raw-name exclusions, applied after allowTools. */
@@ -154,7 +158,8 @@ export async function syncTools(
       taskRequired: tool.execution?.taskSupport === 'required',
       call: (args, execution) => client.callTool(
         { name: tool.name, arguments: args,
-          ...(opts.requestMeta === undefined ? {} : { _meta: opts.requestMeta }),
+          ...(opts.requestMeta === undefined ? {} : { _meta: typeof opts.requestMeta === 'function'
+            ? opts.requestMeta(execution) : opts.requestMeta }),
         },
         { signal: execution.signal, timeout: opts.toolCallTimeoutMs, toolDefinition: tool },
       ),

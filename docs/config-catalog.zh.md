@@ -2157,7 +2157,8 @@ export interface LspLocalServerConfig {
 ## `@deepseek-ai/dsh-mcp-client`
 
 - `inject`: `tools`
-- `source`: [`packages/mcp/mcp-client/src/index.ts:116`](../packages/mcp/mcp-client/src/index.ts)
+- `refs`: [`ToolExecution`](subsystems/tools.zh.md)
+- `source`: [`packages/mcp/mcp-client/src/index.ts:120`](../packages/mcp/mcp-client/src/index.ts)
 
 ```ts config-catalog
 /** Configuration for one stdio or Streamable HTTP MCP server. */
@@ -2193,8 +2194,8 @@ export interface StdioConfig {
   maxInstructionBytes?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
-  /** Trusted per-runtime metadata sent as tools/call params._meta. */
-  requestMeta?: Record<string, unknown>
+  /** Trusted metadata or execution-scoped resolver sent as tools/call params._meta. */
+  requestMeta?: McpRequestMeta
 }
 
 /** Config for connecting to an MCP server over Streamable HTTP (SSE). */
@@ -2223,8 +2224,8 @@ export interface StreamableHttpConfig {
   maxInstructionBytes?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
-  /** Trusted per-runtime metadata sent as tools/call params._meta. */
-  requestMeta?: Record<string, unknown>
+  /** Trusted metadata or execution-scoped resolver sent as tools/call params._meta. */
+  requestMeta?: McpRequestMeta
 }
 
 /** Automatic reconnect policy for one MCP server connection. */
@@ -2238,6 +2239,10 @@ export interface ReconnectConfig {
   /** Consecutive failed attempts per outage before giving up for good (default 10). */
   maxAttempts?: number
 }
+
+/** Trusted metadata resolved independently for each execution, outside model arguments. */
+export type McpRequestMeta = Record<string, unknown>
+  | ((execution: ToolExecution) => Record<string, unknown>)
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-mcp-client -->
 

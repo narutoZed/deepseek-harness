@@ -32,6 +32,8 @@ class RuntimeCapabilities(BaseModel):
     sessionTreeSettled: StrictBool = False
     approvalResponses: StrictBool = False
     subagentControl: StrictBool = False
+    sessionPrepare: StrictBool = False
+    sessionDispose: StrictBool = False
 
 
 class InitializeResponse(BaseModel):

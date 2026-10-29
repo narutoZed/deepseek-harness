@@ -20,11 +20,12 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { DEFAULT_MAX_INSTRUCTION_BYTES, RECONNECT_DEFAULTS, resolveReconnectPolicy, startConnection } from './connection.ts'
 import type { ReconnectConfig } from './connection.ts'
 import { registerServerContext } from './server-context.ts'
+import type { McpRequestMeta } from './tools.ts'
 // Side-effect type import: declaration-merges `ctx.tools` onto Context.
 import type {} from '@deepseek-ai/dsh-tools'
 
 export { createMcpToolDefinition } from './tools.ts'
-export type { McpResult, McpToolDefinitionOptions } from './tools.ts'
+export type { McpResult, McpToolDefinitionOptions, McpRequestMeta } from './tools.ts'
 export type { ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -32,6 +33,9 @@ export const name = 'mcp-client'
 
 /** Services required by this plugin. */
 export const inject = ['tools']
+
+/** Allows deployment wrappers to require execution-scoped metadata support. */
+export const supportsRequestMetaResolver = true
 
 /** Default timeout for individual MCP tool calls and resource requests (ms). */
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000
@@ -78,8 +82,8 @@ export interface StdioConfig {
   maxInstructionBytes?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
-  /** Trusted per-runtime metadata sent as tools/call params._meta. */
-  requestMeta?: Record<string, unknown>
+  /** Trusted metadata or execution-scoped resolver sent as tools/call params._meta. */
+  requestMeta?: McpRequestMeta
 }
 
 /** Config for connecting to an MCP server over Streamable HTTP (SSE). */
@@ -108,8 +112,8 @@ export interface StreamableHttpConfig {
   maxInstructionBytes?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
-  /** Trusted per-runtime metadata sent as tools/call params._meta. */
-  requestMeta?: Record<string, unknown>
+  /** Trusted metadata or execution-scoped resolver sent as tools/call params._meta. */
+  requestMeta?: McpRequestMeta
 }
 
 /** Configuration for one stdio or Streamable HTTP MCP server. */
@@ -142,7 +146,7 @@ export const Config = z.union([
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
     reconnect: Reconnect,
-    requestMeta: z.dict(z.any()),
+    requestMeta: z.union([z.dict(z.any()), z.function()]),
   }),
   z.object({
     transport: z.const('streamable-http'),
@@ -155,7 +159,7 @@ export const Config = z.union([
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
     reconnect: Reconnect,
-    requestMeta: z.dict(z.any()),
+    requestMeta: z.union([z.dict(z.any()), z.function()]),
   }),
 ]) as z<ConfigInput, Config>
 

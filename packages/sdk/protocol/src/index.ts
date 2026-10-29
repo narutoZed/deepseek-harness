@@ -31,6 +31,7 @@ export type {
   SessionEventNotification,
   SessionStatusNotification,
   SessionSettledNotification,
+  SessionPrepareParams,
   SessionPromptParams,
   SessionSteerParams,
   SessionExportParams,

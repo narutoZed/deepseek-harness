@@ -75,6 +75,14 @@ export class SdkSessionSettlement {
     this.check(sessionId, activity)
   }
 
+  /**
+   * Retire one root before releasing its native handles.
+   * @param sessionId - SDK root.
+   */
+  retire(sessionId: string): void {
+    this.roots.delete(sessionId)
+  }
+
   /** Stop publication before the server disposes its agents. */
   close(): void {
     this.closed = true
@@ -106,7 +114,7 @@ export class SdkSessionSettlement {
 
   private finish(sessionId: string, activity: RootActivity, revision: number, error?: Error): void {
     activity.checking = false
-    if (this.closed) return
+    if (this.closed || this.roots.get(sessionId) !== activity) return
     if (activity.revision !== revision || !activity.idle || activity.pending !== 0) {
       this.check(sessionId, activity)
       return

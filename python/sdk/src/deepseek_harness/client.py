@@ -191,6 +191,11 @@ class HarnessClient:
         )
         return response.messageId
 
+    def prepare_session(self, session_id: str, cwd: str) -> None:
+        """Prepare a session with its own absolute origin without starting a turn."""
+        self.request("session/prepare", {"sessionId": session_id, "cwd": cwd},
+                     response_model=_ShutdownResponse)
+
     def get_working_directory(self, session_id: str) -> str:
         """Read the effective directory, recovering a missing directory to the Session origin."""
         response = self.request(

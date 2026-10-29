@@ -181,7 +181,7 @@ describe('dsh-sdk-jsonrpc-server plugin apply', () => {
       expect(response).toEqual({
         jsonrpc: '2.0',
         id: 'init-1',
-        result: { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' }, capabilities: { sessionTreeSettled: true, approvalResponses: false, subagentControl: false } },
+        result: { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' }, capabilities: { sessionTreeSettled: true, sessionPrepare: true, sessionDispose: true, approvalResponses: false, subagentControl: false } },
       })
       expect(harness.exits()).toEqual([])
     } finally {
@@ -254,6 +254,8 @@ describe('dsh-sdk-jsonrpc-server plugin apply', () => {
     try {
       harness.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { cwd: storageDir, provider: 'deepseek-official', model: 'dsagent-model' } })
       await harness.waitForFrame(frame => frame.id === 1, 'initialize response')
+      harness.send({ jsonrpc: '2.0', id: 'prepare', method: 'session/prepare', params: { sessionId: 'main', cwd: storageDir } })
+      expect((await harness.waitForFrame(frame => frame.id === 'prepare', 'prepare response')).result).toEqual({})
 
       harness.send({
         jsonrpc: '2.0',

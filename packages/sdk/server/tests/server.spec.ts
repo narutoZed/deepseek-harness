@@ -216,6 +216,89 @@ describe('HarnessSdkJsonRpcServer', () => {
     }
   })
 
+  it('prepares distinct Session origins in one runtime and rejects conflicting retries', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-prepare-'))
+    const first = join(root, 'first')
+    const second = join(root, 'second')
+    await Promise.all([mkdir(first), mkdir(second)])
+    const ctx = await makeHarness(join(root, 'sessions'), true)
+    ctx.llm.registerAdapter(['mock'], new MockAdapter([textResponse('ok')]))
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    try {
+      await expect(server.handleRequest('session/prepare', { sessionId: 'a', cwd: first })).rejects.toThrow('not active')
+      await server.initialize({ cwd: root, provider: 'mock', model: 'mock' })
+      await Promise.all([
+        server.handleRequest('session/prepare', { sessionId: 'a', cwd: first }),
+        server.handleRequest('session/prepare', { sessionId: 'b', cwd: second }),
+      ])
+      expect(ctx.agents.get(SessionId('a'))?.session.header.cwd).toBe(first)
+      expect(ctx.agents.get(SessionId('b'))?.session.header.cwd).toBe(second)
+      expect(ctx.agents.get(SessionId('a'))?.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
+      await expect(server.handleRequest('session/prepare', { sessionId: 'a', cwd: first })).resolves.toEqual({})
+      await expect(server.handleRequest('session/prepare', { sessionId: 'a', cwd: second })).rejects.toThrow('origin does not match')
+      const raced = await Promise.allSettled([
+        server.handleRequest('session/prepare', { sessionId: 'race', cwd: first }),
+        server.handleRequest('session/prepare', { sessionId: 'race', cwd: second }),
+      ])
+      expect(raced.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+      expect(raced.filter(result => result.status === 'rejected')).toHaveLength(1)
+      await expect(server.handleRequest('session/prepare', { sessionId: 'c', cwd: 'relative' })).rejects.toThrow('absolute cwd')
+      await server.prompt({ sessionId: 'a', contentBlocks: [{ type: 'text', text: 'hello' }] })
+      await server.wait({ sessionId: 'a' })
+      expect(ctx.agents.get(SessionId('a'))?.session.header.cwd).toBe(first)
+    } finally {
+      await server.shutdown()
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('resumes a prepared Session only under its original directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-prepare-resume-'))
+    const cwd = join(root, 'workspace')
+    await mkdir(cwd)
+    const ctx = await makeHarness(join(root, 'sessions'), true)
+    ctx.llm.registerAdapter(['mock'], new MockAdapter([]))
+    const first = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    const second = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    try {
+      await first.initialize({ cwd: root, provider: 'mock', model: 'mock' })
+      await first.prepareSession({ sessionId: 'resume', cwd })
+      await first.shutdown()
+      await second.initialize({ cwd: root, provider: 'mock', model: 'mock' })
+      await expect(second.prepareSession({ sessionId: 'resume', cwd })).resolves.toEqual({})
+      await expect(second.prepareSession({ sessionId: 'resume', cwd: root })).rejects.toThrow('origin does not match')
+    } finally {
+      await first.shutdown()
+      await second.shutdown()
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('disposes one prepared root and resumes it without disposing its sibling', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-dispose-'))
+    const ctx = await makeHarness(join(root, 'sessions'), true)
+    ctx.llm.registerAdapter(['mock'], new MockAdapter([textResponse('ok')]))
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    try {
+      await server.initialize({ cwd: root, provider: 'mock', model: 'mock' })
+      await Promise.all(['a', 'b'].map(sessionId => server.prepareSession({ sessionId, cwd: root })))
+      const sibling = ctx.agents.get(SessionId('b'))
+      await server.handleRequest('session/dispose', { sessionId: 'a' })
+      expect(ctx.agents.get(SessionId('a'))).toBeUndefined()
+      expect(ctx.agents.get(SessionId('b'))).toBe(sibling)
+      await server.prepareSession({ sessionId: 'a', cwd: root })
+      await server.prompt({ sessionId: 'b', contentBlocks: [{ type: 'text', text: 'hello' }] })
+      await server.wait({ sessionId: 'b' })
+      await expect(server.disposeSession('missing')).resolves.toEqual({})
+    } finally {
+      await server.shutdown()
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('changes effective directories through RPC while preserving Session origins and replayable context', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-directory-'))
     const child = join(root, 'child')
@@ -1663,7 +1746,7 @@ describe('SDK control ownership and routing', () => {
       expect(await ask(foreign.agent)).toBe('unavailable')
       await expect(server.handleRequest('subagent/prompt', prompt)).rejects.toHaveProperty('data.code', 'subagent/delivery-unavailable')
       expect(await server.initialize({ cwd: storageDir, provider: 'deepseek-official', model: 'test' }))
-        .toHaveProperty('capabilities', { sessionTreeSettled: true, approvalResponses: true, subagentControl: true })
+        .toHaveProperty('capabilities', { sessionTreeSettled: true, sessionPrepare: true, sessionDispose: true, approvalResponses: true, subagentControl: true })
       const list = vi.spyOn(ctx.subagents, 'listDescendants').mockResolvedValue([])
       await expect(server.handleRequest('subagent/interrupt', address)).rejects.toHaveProperty('data.code', 'subagent/unauthorized')
       const root = ctx.agents.get(SessionId('root'))!

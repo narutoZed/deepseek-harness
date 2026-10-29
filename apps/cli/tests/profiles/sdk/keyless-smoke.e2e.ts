@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -146,6 +146,19 @@ describe('Python SDK dsh profile keyless smoke', () => {
         id: 1,
         result: { serverInfo: { name: 'deepseek-harness-sdk-runtime' } },
       })
+
+      const workspace = join(root, 'session-workspace')
+      await mkdir(workspace)
+      const sessionDirectory = await realpath(workspace)
+      child.stdin.write(`${JSON.stringify({
+        jsonrpc: '2.0', id: 'prepare', method: 'session/prepare',
+        params: { sessionId: 'main', cwd: sessionDirectory },
+      })}\n`)
+      expect(await waitForLine(lines, value => value.id === 'prepare', () => stderr)).toMatchObject({ result: {} })
+      child.stdin.write(`${JSON.stringify({
+        jsonrpc: '2.0', id: 'cwd', method: 'session/working-directory/get', params: { sessionId: 'main' },
+      })}\n`)
+      expect(await waitForLine(lines, value => value.id === 'cwd', () => stderr)).toMatchObject({ result: { cwd: sessionDirectory } })
 
       child.stdin.write(`${JSON.stringify({
         jsonrpc: '2.0',

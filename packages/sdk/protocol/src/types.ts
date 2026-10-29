@@ -33,7 +33,19 @@ export interface InitializeResult {
   /** Wire-stable server identity (`deepseek-harness-sdk-runtime`) and version. */
   serverInfo: { name: string; version: string }
   /** Optional runtime features; absence preserves compatibility with older runtimes. */
-  capabilities?: { sessionTreeSettled?: boolean; approvalResponses?: boolean; subagentControl?: boolean }
+  capabilities?: {
+    sessionTreeSettled?: boolean
+    approvalResponses?: boolean
+    subagentControl?: boolean
+    sessionPrepare?: boolean
+    sessionDispose?: boolean
+  }
+}
+
+/** Prepare one Session with an explicit absolute origin without starting a turn. */
+export interface SessionPrepareParams {
+  sessionId: string
+  cwd: string
 }
 
 /** One user turn on one SDK session. */
@@ -286,6 +298,8 @@ export interface HarnessSdkNotificationMap {
 /** Client-to-server request methods with their param and result shapes. */
 export interface HarnessSdkRequestMap {
   'initialize': { params: InitializeParams; result: InitializeResult }
+  'session/dispose': { params: { sessionId: string }; result: Record<string, never> }
+  'session/prepare': { params: SessionPrepareParams; result: Record<string, never> }
   'session/prompt': { params: SessionPromptParams; result: SessionPromptResult }
   'session/wait': { params: SessionWaitParams; result: Record<string, never> }
   'session/working-directory/get': { params: SessionWorkingDirectoryParams; result: SessionWorkingDirectoryResult }

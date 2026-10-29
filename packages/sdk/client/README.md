@@ -62,6 +62,8 @@ The subprocess starts lazily on first use and stays owned by the instance across
 
 ### Lower-level control with HarnessClient
 
+`HarnessClient.prepareSession(sessionId, cwd)` prepares a Session with an absolute origin before its first prompt when `sessionPrepare` is advertised. The caller authorizes the directory.
+
 `HarnessClient` is the protocol client under the run API: explicit `start()`, `initialize()`, `prompt()`, `request()`, and `close()`, plus notification subscriptions. `prompt()` returns the queued message id as soon as the runtime accepts it and never waits for agent activity. `subscribe(filter?)` returns a `NotificationSubscription` (awaitable `next()`, non-blocking `tryNext()`, async iteration); `subscribeSessionTree(id)` scopes to one session and the descendants discovered from `subagent.started` lineage edges — the runtime notifies for every session in its context, and scoping is client-side, exactly like the Python SDK.
 
 Task-owning consumers can subscribe before `prompt()`, then call `request('session/wait', { sessionId })` and drain queued notifications with `tryNext()`. This waits for managed descendants and their root summary turns; `HarnessSession.run()` retains its next-idle interval. `validatedSessionEvent()` validates the event envelope and the assistant/turn fields consumed by SDK readers before they enter an output fold.

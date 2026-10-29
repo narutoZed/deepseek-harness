@@ -8,7 +8,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { resolve } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { admitEncodedImages, type EncodedImageAttachment, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -43,6 +43,7 @@ import type {
   JsonRpcTransportPeer,
   SessionAssistantStreamNotification,
   SessionEventNotification,
+  SessionPrepareParams,
   SessionPromptParams,
   SessionSteerParams,
   SessionSettledNotification,
@@ -129,6 +130,7 @@ export class HarnessSdkJsonRpcServer {
   private readonly steers = new Map<string, { content: string; result: Promise<SessionPromptResult> }>()
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly sessionCreations = new Map<string, Promise<SessionRecord>>()
+  private readonly sessionDisposals = new Map<string, Promise<Record<string, never>>>()
   private readonly forkCreations = new Set<Promise<SessionForkResult>>()
   private readonly pendingInteractions = new Map<string, PendingInteraction>()
   private readonly disposers: (() => void)[] = []
@@ -287,9 +289,53 @@ export class HarnessSdkJsonRpcServer {
     this.initialized = true
     return {
       serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' },
-      capabilities: { sessionTreeSettled: true, approvalResponses: this.ctx.get('approval') !== undefined,
+      capabilities: { sessionTreeSettled: true, sessionPrepare: true, sessionDispose: true, approvalResponses: this.ctx.get('approval') !== undefined,
         subagentControl: this.ctx.get('subagents') !== undefined },
     }
+  }
+
+  /**
+   * Prepare an SDK-owned Session with its own absolute origin, without starting a turn.
+   * @param params - session identity and authorized origin directory.
+   * @returns an empty acknowledgement after initialization completes.
+   */
+  async prepareSession(params: SessionPrepareParams): Promise<Record<string, never>> {
+    if (!this.initialized || this.shuttingDown) throw new Error('SDK server is not active')
+    if (typeof params.sessionId !== 'string' || params.sessionId.length === 0) throw new TypeError('session/prepare requires a non-empty sessionId')
+    if (typeof params.cwd !== 'string' || !isAbsolute(params.cwd)) throw new TypeError('session/prepare requires an absolute cwd')
+    const cwd = resolve(params.cwd)
+    const rec = await this.getOrCreateSession(params.sessionId, cwd)
+    this.assertLiveAgent(rec, params.sessionId)
+    if (rec.handle.agent.session.header.cwd !== cwd) throw new Error(`session origin does not match: ${params.sessionId}`)
+    return {}
+  }
+
+  /**
+   * Cancel and release one root and its descendants while keeping other roots available.
+   * @param sessionId - SDK-owned root; an absent root is already disposed.
+   * @returns after native work and persistence handles have been released.
+   */
+  disposeSession(sessionId: string): Promise<Record<string, never>> {
+    if (!this.initialized || this.shuttingDown) return Promise.reject(new Error('SDK server is not active'))
+    const pending = this.sessionDisposals.get(sessionId)
+    if (pending !== undefined) return pending
+    const dispose = (async (): Promise<Record<string, never>> => {
+      await this.sessionCreations.get(sessionId)
+      const rec = this.sessions.get(sessionId)
+      if (rec === undefined) return {}
+      this.settlement.retire(sessionId)
+      rec.handle.agent.cancel({ kind: 'user' })
+      await this.ctx.get('subagents')?.drainDescendants([rec.handle.agent])
+      await rec.handle.dispose()
+      this.sessions.delete(sessionId)
+      const prefix = JSON.stringify([sessionId]).slice(0, -1) + ','
+      for (const key of this.steers.keys()) if (key.startsWith(prefix)) this.steers.delete(key)
+      this.transport.notify('session.settled', { sessionId, error: 'The SDK session was disposed.' })
+      return {}
+    })()
+    this.sessionDisposals.set(sessionId, dispose)
+    void dispose.then(() => { this.sessionDisposals.delete(sessionId) }, () => { this.sessionDisposals.delete(sessionId) })
+    return dispose
   }
 
   /**
@@ -529,7 +575,7 @@ export class HarnessSdkJsonRpcServer {
     this.settlement.close()
     try { this.approvals.close() } catch (error) { failures.push(error) }
     try { await this.subagentControl.close() } catch (error) { failures.push(error) }
-    const pendingCreations = [...this.sessionCreations.values(), ...this.forkCreations]
+    const pendingCreations = [...this.sessionCreations.values(), ...this.forkCreations, ...this.sessionDisposals.values()]
     await Promise.allSettled(pendingCreations)
     this.sessionCreations.clear()
     const records = [...this.sessions.values()]
@@ -577,6 +623,10 @@ export class HarnessSdkJsonRpcServer {
     switch (method) {
       case 'initialize':
         return this.initialize(params as unknown as InitializeParams)
+      case 'session/dispose':
+        return this.disposeSession(requestString(params, 'sessionId'))
+      case 'session/prepare':
+        return this.prepareSession(params as unknown as SessionPrepareParams)
       case 'session/prompt':
         return this.prompt(params as unknown as SessionPromptParams)
       case 'session/wait': {
@@ -637,13 +687,14 @@ export class HarnessSdkJsonRpcServer {
     return { accepted: true }
   }
 
-  private async getOrCreateSession(sessionId: string): Promise<SessionRecord> {
+  private async getOrCreateSession(sessionId: string, cwd = this.cwd): Promise<SessionRecord> {
     if (this.shuttingDown) throw new Error('SDK server is shutting down')
+    if (this.sessionDisposals.has(sessionId)) throw new Error('SDK session is being disposed')
     const existing = this.sessions.get(sessionId)
     if (existing) return existing
     const pending = this.sessionCreations.get(sessionId)
     if (pending) return pending
-    const creation = this.createSession(sessionId)
+    const creation = this.createSession(sessionId, cwd)
     this.sessionCreations.set(sessionId, creation)
     void creation.then(
       () => { this.sessionCreations.delete(sessionId) },
@@ -663,7 +714,7 @@ export class HarnessSdkJsonRpcServer {
     }
   }
 
-  private async createSession(sessionId: string): Promise<SessionRecord> {
+  private async createSession(sessionId: string, cwd: string): Promise<SessionRecord> {
     // No preset composition: this server's compositions keep the model-facing
     // rows in the host plane, so this agent reads them from the global layer. A
     // deployment that configures a roster has to join one here first
@@ -674,7 +725,7 @@ export class HarnessSdkJsonRpcServer {
     try {
       handle = await this.ctx.agents.create({
         sessionId: id,
-        meta: { cwd: this.cwd },
+        meta: { cwd },
         agentOptions,
       })
     } catch (error: unknown) {

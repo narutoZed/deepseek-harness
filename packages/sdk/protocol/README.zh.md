@@ -61,6 +61,8 @@ kind: "package-library"
 | 方向 | 方法 | 载荷类型 |
 |---|---|---|
 | client→server | `initialize` | `InitializeParams` → `InitializeResult` |
+| client→server | `session/dispose` | `{ sessionId }` → `{}` |
+| client→server | `session/prepare` | `SessionPrepareParams` → `{}` |
 | client→server | `session/prompt` | `SessionPromptParams` → `SessionPromptResult`（持久入队回执） |
 | client→server | `session/wait` | `SessionWaitParams` → `{}` |
 | 客户端→服务端 | `session/working-directory/get` | `SessionWorkingDirectoryParams` → `SessionWorkingDirectoryResult` |
@@ -85,6 +87,10 @@ kind: "package-library"
 | server→client | `subagent.finished` | `SubagentFinishedNotification`（仅进程内运行） |
 
 `HarnessSdkRequestMap` 与 `HarnessSdkNotificationMap` 按方法名索引这些结构；包根与传输一起导出它们。
+
+`session/dispose` 接受 `{ sessionId }`，释放该根会话及其后代后返回 `{}`。不存在的活动根会话视为已释放。它保留历史，并发出带错误的 `session.settled`，使等待中的运行消费者退出。使用前检查 `capabilities.sessionDispose`。
+
+`session/prepare` 接受包含绝对初始目录的 `{ sessionId, cwd }`，创建或恢复会话而不启动轮次，完成后返回 `{}`。已有初始目录不匹配时会拒绝；调用方必须授权该路径并先检查 `capabilities.sessionPrepare`。
 
 `session/wait` 接受已有 SDK 会话的 `{ sessionId }`，在根 Agent 持续空闲且活跃的受管理后代工作结束后返回 `{}`。带有停放输入的空闲后代保持驻留，不阻塞这次等待。未知 id，以及没有后续终止事件记录的 Agent 运行时错误，都会使请求失败。等待期间提交的通知在同一传输上先于响应到达；原始 `session.status` 转换仍表示整个 Agent 的状态。
 

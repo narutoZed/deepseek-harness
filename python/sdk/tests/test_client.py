@@ -1441,3 +1441,18 @@ for line in sys.stdin:
                                      child_session_id="child", request_id="request-1")
             else:
                 harness.run("work", session_id="root")
+
+
+def test_prepare_session_sends_absolute_origin_and_capability_is_strict(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = HarnessClient()
+    calls = []
+    def request(method, params, *, response_model):
+        calls.append((method, params))
+        return response_model.model_validate({})
+    monkeypatch.setattr(client, "request", request)
+    client.prepare_session("session-a", "/tmp/work-a")
+    assert calls == [("session/prepare", {"sessionId": "session-a", "cwd": "/tmp/work-a"})]
+    from deepseek_harness.models import InitializeResponse
+    assert InitializeResponse.model_validate({"capabilities": {"sessionPrepare": True}}).capabilities.sessionPrepare
+    with pytest.raises(ValueError):
+        InitializeResponse.model_validate({"capabilities": {"sessionPrepare": "yes"}})

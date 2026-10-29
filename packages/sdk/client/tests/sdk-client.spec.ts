@@ -493,6 +493,14 @@ describe('DeepSeekHarness', () => {
 })
 
 describe('HarnessClient', () => {
+  it('prepares an explicit Session origin through the runtime', async () => {
+    const client = processClient(fakeLaunch())
+    cleanups.push(() => client.close())
+    client.start()
+    await client.initialize({ cwd: process.cwd(), provider: 'mock', model: 'mock' })
+    await client.prepareSession('prepared', '/tmp/prepared')
+    expect(await client.getWorkingDirectory('prepared')).toBe('/tmp/prepared')
+  })
   it('bounds profile initialization and names the selected profile in its diagnostic', async () => {
     const client = processClient(fakeLaunch(
       { FAKE_HANG_INIT: '1' },

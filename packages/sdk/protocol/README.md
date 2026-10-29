@@ -61,6 +61,8 @@ Both wire ends share the following methods.
 | Direction | Method | Payload types |
 |---|---|---|
 | client→server | `initialize` | `InitializeParams` → `InitializeResult` |
+| client→server | `session/dispose` | `{ sessionId }` → `{}` |
+| client→server | `session/prepare` | `SessionPrepareParams` → `{}` |
 | client→server | `session/prompt` | `SessionPromptParams` → `SessionPromptResult` (durable enqueue receipt) |
 | client→server | `session/wait` | `SessionWaitParams` → `{}` |
 | client→server | `session/working-directory/get` | `SessionWorkingDirectoryParams` → `SessionWorkingDirectoryResult` |
@@ -85,6 +87,10 @@ Both wire ends share the following methods.
 | server→client | `subagent.finished` | `SubagentFinishedNotification` (in-process runs only) |
 
 `HarnessSdkRequestMap` and `HarnessSdkNotificationMap` index these shapes by method name; the package root exports them together with the transport.
+
+`session/dispose` accepts `{ sessionId }` and returns `{}` after releasing that root and its descendants. A missing live root is already disposed. It preserves history and emits `session.settled` with an error to unblock pending run consumers. Check `capabilities.sessionDispose` before use.
+
+`session/prepare` accepts `{ sessionId, cwd }` with an absolute origin and returns `{}` after creating or resuming the Session without a turn. It rejects a different existing origin; callers must authorize the path and check `capabilities.sessionPrepare` before use.
 
 `session/wait` accepts `{ sessionId }` for an existing SDK-owned session and returns `{}` after the root stays idle and progressing managed descendant work finishes. Idle descendants with parked input remain resident without blocking this wait. Unknown ids and live Agent failures without a newer committed terminal are rejected. Notifications committed during the wait precede its response on the same transport; raw `session.status` transitions retain their whole-agent meaning.
 
